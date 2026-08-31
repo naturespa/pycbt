@@ -13,8 +13,8 @@ const EXAM_BLUEPRINT = {
 
 const DOMAIN_NAMES = { A: "アルゴリズム基礎・表現", B: "コンピュータ言語", C: "変数・データ型・演算", D: "条件分岐・反復", E: "配列・データ構造", F: "擬似言語・総合アルゴリズム" };
 
-function makeQuestion({ id, domain, viewpoint, format, points, itPassport = false, visualType = "none", variantGroup = null, skill, question, answer, choices, visual, explanation, adviceTag }) {
-  return { id, domain, viewpoint, format, points, difficulty: "basic", source: itPassport ? "itp_similar" : "textbook_original", source_ref: "CBT骨格サンプル", it_passport: itPassport, visual_type: visualType, variant_group: variantGroup, skill, question, answer: String(answer), acceptable_answers: [String(answer)], choices, visual, explanation, advice_tag: adviceTag };
+function makeQuestion({ id, domain, viewpoint, format, points, itPassport = false, visualType = "none", variantGroup = null, variantId = null, renderType = variantGroup ? "parameter" : "fixed", skill, question, answer, choices, visual, explanation, adviceTag }) {
+  return { id, domain, viewpoint, format, points, difficulty: "basic", source: itPassport ? "itp_similar" : "textbook_original", source_ref: "CBT骨格サンプル", it_passport: itPassport, render_type: renderType, visual_type: visualType, variant_group: variantGroup, variant_id: variantId, skill, question, answer: String(answer), acceptable_answers: [String(answer)], choices, visual, explanation, advice_tag: adviceTag };
 }
 
 const QUESTION_BANK = [

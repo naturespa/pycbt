@@ -15,7 +15,7 @@ input { display: block; border: 1px solid #9babB5; border-radius: 8px; padding: 
 .exam-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 #student-label { display: block; } #progress-label { color: #52616d; font-size: .9rem; } #timer { color: #8a2f0d; font-size: 1.25rem; font-weight: bold; white-space: nowrap; }
 .notice { background: #fff4d6; border-left: 4px solid #dc9400; padding: .75rem 1rem; margin-bottom: 1rem; }
-.question-meta { color: #52616d; font-size: .9rem; } .question-card h2 { margin: .5rem 0 1rem; font-size: 1.2rem; line-height: 1.7; }
+.question-card { height: clamp(500px, 66vh, 680px); display: flex; flex-direction: column; overflow: hidden; }.question-meta { color: #52616d; font-size: .9rem; margin-top: 0; } .question-card h2 { margin: .5rem 0 1rem; font-size: 1.2rem; line-height: 1.7; }.question-body { flex: 1; overflow: auto; padding-right: .35rem; }
 .visual { padding: 1rem; background: #f2f8f8; border: 1px solid #bdd8d8; white-space: pre-wrap; border-radius: 8px; margin: 1rem 0; }
 .choice { display: flex; gap: .65rem; align-items: flex-start; border: 1px solid #d2dce1; border-radius: 8px; padding: .8rem; margin: .6rem 0; font-weight: normal; cursor: pointer; }
 .choice:has(input:checked) { border-color: #086c73; background: #eefafa; } .choice input { width: auto; margin: .2rem 0 0; }
@@ -26,4 +26,4 @@ input { display: block; border: 1px solid #9babB5; border-radius: 8px; padding: 
 .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; }.result-grid div { border: 1px solid #d2dce1; border-radius: 8px; padding: .75rem; }.result-grid strong { display: block; font-size: 1.25rem; margin-top: .35rem; }
 .advice { margin: 1.5rem 0; padding: 1rem; background: #f7f9fa; border-radius: 8px; }.advice li { margin: .55rem 0; }
 dialog { border: 0; border-radius: 12px; box-shadow: 0 12px 40px #0004; max-width: 420px; } dialog::backdrop { background: #11263488; }.dialog-actions { display: flex; justify-content: end; gap: .75rem; margin-top: 1.5rem; }
-@media (max-width: 620px) { .app-shell { margin-top: 1rem; }.exam-header { align-items: flex-start; flex-wrap: wrap; }.exam-header .secondary { order: 3; width: 100%; } }
+@media (max-width: 620px) { .app-shell { margin-top: 1rem; }.exam-header { align-items: flex-start; flex-wrap: wrap; }.exam-header .secondary { order: 3; width: 100%; }.question-card { height: 62vh; min-height: 430px; } }

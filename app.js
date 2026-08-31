@@ -1,30 +1,112 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { student: null, questions: [], answers: {}, current: 0, remaining: EXAM_BLUEPRINT.durationSeconds, timer: null, submitted: false };
+  const STORAGE_PREFIX = "pycbt:v1:";
+  const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
-  function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v)) return null; return { id:v, grade:Number(v[0]), classNo:Number(v[1]), attendance:Number(v.slice(2)) }; }
+  const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
+  const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
+  const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
+  const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+  function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v)) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
+  function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
+  function persistActive() {
+    if (!state.student || state.submitted) return;
+    setLocal(activeKey(state.student.id), { schema_version: 1, student: state.student, answers: state.answers, current: state.current, started_at: state.startedAt, ends_at: state.endsAt, question_ids: state.questions.map(q => q.id) });
+  }
   function renderQuestion() {
     const q = state.questions[state.current]; const answer = state.answers[q.id] ?? "";
     $("progress-label").textContent = `第 ${state.current + 1} 問 / ${state.questions.length} 問`;
     const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${q.visual_type}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
-    const input = q.format === "choice" ? `<div>${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${choice}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65+i)}. ${choice}</span></label>`).join("")}</div>` : `<label>解答<input class="answer-input" id="answer-input" value="${answer}" autocomplete="off" /></label>`;
-    $("question-card").innerHTML = `<p class="question-meta">${q.id}　${DOMAIN_NAMES[q.domain]}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}</p><h2>${q.question}</h2>${visual}${input}`;
-    document.querySelectorAll('input[name="answer"]').forEach(el => el.addEventListener("change", () => { state.answers[q.id] = el.value; renderNav(); }));
-    $("answer-input")?.addEventListener("input", (event) => { state.answers[q.id] = event.target.value; renderNav(); });
-    $("previous-button").disabled = state.current === 0; $("next-button").textContent = state.current === state.questions.length - 1 ? "最後の問題" : "次の問題"; renderNav();
+    const input = q.format === "choice" ? `<div class="answer-area">${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${choice}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65 + i)}. ${choice}</span></label>`).join("")}</div>` : `<div class="answer-area"><label>解答<input class="answer-input" id="answer-input" value="${answer}" autocomplete="off" /></label></div>`;
+    $("question-card").innerHTML = `<p class="question-meta">${q.id}　${DOMAIN_NAMES[q.domain]}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}</p><div class="question-body"><h2>${q.question}</h2>${visual}${input}</div>`;
+    document.querySelectorAll('input[name="answer"]').forEach(el => el.addEventListener("change", () => { state.answers[q.id] = el.value; persistActive(); renderNav(); }));
+    $("answer-input")?.addEventListener("input", event => { state.answers[q.id] = event.target.value; persistActive(); renderNav(); });
+    $("previous-button").disabled = state.current === 0;
+    $("next-button").textContent = state.current === state.questions.length - 1 ? "最後の問題" : "次の問題";
+    renderNav();
   }
-  function renderNav() { $("question-dots").innerHTML = state.questions.map((q, i) => `<button type="button" class="${i === state.current ? "active" : ""} ${normalize(state.answers[q.id]) ? "answered" : ""}" data-index="${i}" aria-label="第${i+1}問">${i+1}</button>`).join(""); document.querySelectorAll("[data-index]").forEach(button => button.addEventListener("click", () => { state.current = Number(button.dataset.index); renderQuestion(); })); }
-  function tick() { const m = Math.floor(state.remaining / 60); const s = state.remaining % 60; $("timer").textContent = `残り ${m}:${String(s).padStart(2,"0")}`; if (state.remaining <= 0) { submit(true); return; } state.remaining -= 1; }
-  function confirmSubmission() { const missing = state.questions.filter(q => !normalize(state.answers[q.id])).length; $("unanswered-message").textContent = missing ? `未回答が${missing}問あります。提出後は解答を変更できません。` : "35問すべてに解答済みです。提出後は解答を変更できません。"; $("confirm-submit").showModal(); }
-  function scoreExam() { return state.questions.map(q => { const answer = normalize(state.answers[q.id]); const correct = q.acceptable_answers.some(a => normalize(a) === answer); return { ...q, response: state.answers[q.id] ?? "", correct, earned:correct ? q.points : 0 }; }); }
-  function calculateStats(results) { const group = (label, filter) => { const items = results.filter(filter); const earned = items.reduce((s,q) => s + q.earned,0); const max = items.reduce((s,q) => s + q.points,0); return { label, earned, max, correct:items.filter(q => q.correct).length, count:items.length }; }; return { total:group("総合", () => true), knowledge:group("知識・技能",q=>q.viewpoint === "knowledge"), thinking:group("思考・判断・表現",q=>q.viewpoint === "thinking"), it:group("ITパスポート関連",q=>q.it_passport), domains:Object.keys(DOMAIN_NAMES).map(d=>group(`${d} ${DOMAIN_NAMES[d]}`,q=>q.domain === d)) }; }
-  function submit(auto = false) { if (state.submitted) return; state.submitted = true; clearInterval(state.timer); const results = scoreExam(); const stats = calculateStats(results); $("exam-screen").hidden = true; $("result-screen").hidden = false; $("result-student").textContent = `${state.student.grade}年${state.student.classNo}組${state.student.attendance}番　${state.student.name}${auto ? "（時間終了により自動提出）" : ""}`; $("total-score").textContent = formatScore(stats.total.earned,stats.total.max); $("correct-count").textContent = `${stats.total.correct} / 35 問`;
-    const blocks = [stats.knowledge, stats.thinking, ...stats.domains, stats.it].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned,s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`); $("result-details").innerHTML = blocks.join("");
-    const weak = [...stats.domains, stats.it].filter(s=>s.max && s.earned/s.max < .7); $("advice-list").innerHTML = (weak.length ? weak.map(s=>`<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`):["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
-    $("download-csv").onclick = () => downloadCsv(results, stats, auto); window.scrollTo({ top:0, behavior:"smooth" }); }
-  function csvEscape(value) { return `"${String(value).replaceAll('"','""')}"`; }
-  function downloadCsv(results, stats, auto) { const rows = [["record_type","student_id","name","grade","class","attendance","submitted_at","auto_submitted","question_id","domain","viewpoint","format","points","earned","correct","response","variant_group","visual_type"], ["summary",state.student.id,state.student.name,state.student.grade,state.student.classNo,state.student.attendance,new Date().toISOString(),auto,"","","","",stats.total.max,stats.total.earned,"","","",""]]; results.forEach(q=>rows.push(["question",state.student.id,state.student.name,state.student.grade,state.student.classNo,state.student.attendance,"","",q.id,q.domain,q.viewpoint,q.format,q.points,q.earned,q.correct ? "1":"0",q.response,q.variant_group ?? "",q.visual_type])); const bom="\uFEFF"; const blob=new Blob([bom + rows.map(row=>row.map(csvEscape).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}); const link=document.createElement("a"); link.href=URL.createObjectURL(blob); link.download=`pycbt_${state.student.id}_${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href); }
-  $("entry-form").addEventListener("submit", event => { event.preventDefault(); const student = parseStudentId($("student-id").value); if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; } const errors=validateBlueprint(QUESTION_BANK); if(errors.length) { alert(`問題マスタの検証に失敗しました。\n${errors.join("\n")}`); return; } state.student={...student,name:$("student-name").value.trim()}; state.questions=[...QUESTION_BANK]; $("student-label").textContent=`${student.grade}年${student.classNo}組${student.attendance}番　${state.student.name}`; $("entry-screen").hidden=true; $("exam-screen").hidden=false; tick(); state.timer=setInterval(tick,1000); renderQuestion(); });
-  $("previous-button").onclick=()=>{ if(state.current>0){state.current-=1;renderQuestion();} }; $("next-button").onclick=()=>{if(state.current<state.questions.length-1){state.current+=1;renderQuestion();}else { $("exam-notice").hidden=false; $("exam-notice").textContent="最後の問題です。問題番号を押すと任意の問題へ移動できます。"; }}; $("submit-button").onclick=confirmSubmission; $("confirm-submit").addEventListener("close",()=>{if($("confirm-submit").returnValue === "confirm") submit(false);});
+  function renderNav() {
+    $("question-dots").innerHTML = state.questions.map((q, i) => `<button type="button" class="${i === state.current ? "active" : ""} ${normalize(state.answers[q.id]) ? "answered" : ""}" data-index="${i}" aria-label="第${i + 1}問">${i + 1}</button>`).join("");
+    document.querySelectorAll("[data-index]").forEach(button => button.addEventListener("click", () => { state.current = Number(button.dataset.index); persistActive(); renderQuestion(); }));
+  }
+  function tick() {
+    const remaining = Math.max(0, Math.ceil((new Date(state.endsAt).getTime() - Date.now()) / 1000));
+    const m = Math.floor(remaining / 60); const s = remaining % 60;
+    $("timer").textContent = `残り ${m}:${String(s).padStart(2, "0")}`;
+    if (remaining <= 0) submit(true);
+  }
+  function beginExam(session) {
+    state.student = session.student; state.questions = [...QUESTION_BANK]; state.answers = session.answers ?? {}; state.current = session.current ?? 0;
+    state.startedAt = session.started_at ?? new Date().toISOString();
+    state.endsAt = session.ends_at ?? new Date(Date.now() + EXAM_BLUEPRINT.durationSeconds * 1000).toISOString();
+    state.submitted = false;
+    $("student-label").textContent = studentText(state.student); $("entry-screen").hidden = true; $("exam-screen").hidden = false;
+    persistActive(); clearInterval(state.timer); tick();
+    if (state.submitted) return;
+    state.timer = setInterval(tick, 1000); renderQuestion();
+  }
+  function confirmSubmission() {
+    const missing = state.questions.filter(q => !normalize(state.answers[q.id])).length;
+    $("unanswered-message").textContent = missing ? `未回答が${missing}問あります。提出後は解答を変更できません。` : "35問すべてに解答済みです。提出後は解答を変更できません。";
+    $("confirm-submit").showModal();
+  }
+  function scoreExam() {
+    return state.questions.map(q => {
+      const response = state.answers[q.id] ?? "";
+      const correct = q.acceptable_answers.some(a => normalize(a) === normalize(response));
+      return { ...q, response, correct, earned: correct ? q.points : 0 };
+    });
+  }
+  function calculateStats(results) {
+    const group = (label, filter) => { const items = results.filter(filter); const earned = items.reduce((s, q) => s + q.earned, 0); const max = items.reduce((s, q) => s + q.points, 0); return { label, earned, max, correct: items.filter(q => q.correct).length, count: items.length }; };
+    return { total: group("総合", () => true), knowledge: group("知識・技能", q => q.viewpoint === "knowledge"), thinking: group("思考・判断・表現", q => q.viewpoint === "thinking"), it: group("ITパスポート関連", q => q.it_passport), domains: Object.keys(DOMAIN_NAMES).map(d => group(`${d} ${DOMAIN_NAMES[d]}`, q => q.domain === d)) };
+  }
+  function makeRecord(results, stats, auto) {
+    return {
+      schema_version: 1,
+      assessment: { title: "情報I CBT", blueprint: EXAM_BLUEPRINT, question_bank_capacity: QUESTION_BANK_CAPACITY },
+      student: { id: state.student.id, grade: state.student.grade, class: state.student.classNo, attendance: state.student.attendance, name: state.student.name },
+      session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
+      scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
+      questions: results.map(q => ({ question_id: q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
+    };
+  }
+  function submit(auto = false) {
+    if (state.submitted) return;
+    state.submitted = true; clearInterval(state.timer);
+    const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
+    localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
+    $("exam-screen").hidden = true; $("result-screen").hidden = false;
+    $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
+    $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `${stats.total.correct} / 35 問`;
+    $("result-details").innerHTML = [stats.knowledge, stats.thinking, ...stats.domains, stats.it].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
+    const weak = [...stats.domains, stats.it].filter(s => s.max && s.earned / s.max < .7);
+    $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
+    $("download-json").onclick = downloadJson; window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function downloadJson() {
+    const blob = new Blob([JSON.stringify(state.record, null, 2)], { type: "application/json;charset=utf-8" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+    link.download = `pycbt_${state.student.id}_${state.record.session.submitted_at.slice(0, 10)}.json`;
+    link.click(); URL.revokeObjectURL(link.href);
+  }
+  $("entry-form").addEventListener("submit", event => {
+    event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
+    if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
+    if (!name) return;
+    const errors = validateBlueprint(QUESTION_BANK);
+    if (errors.length) { alert(`問題マスタの検証に失敗しました。\n${errors.join("\n")}`); return; }
+    if (getLocal(completedKey(student.id))) { $("student-id-hint").textContent = "この受験番号は、このブラウザからすでに提出済みです。再受験する場合は先生に申し出てください。"; return; }
+    const active = getLocal(activeKey(student.id));
+    state.pending = active?.student ? { ...active, student: active.student, resume: true } : { student: { ...student, name }, resume: false };
+    $("start-summary").textContent = studentText(state.pending.student); $("resume-message").hidden = !state.pending.resume;
+    $("resume-message").textContent = state.pending.resume ? "この受験番号には中断中の試験があります。前回の解答と残り時間を復元します。" : "受験番号と氏名を確認してから開始してください。";
+    $("confirm-start").showModal();
+  });
+  $("confirm-start").addEventListener("close", () => { if ($("confirm-start").returnValue === "confirm" && state.pending) beginExam(state.pending); state.pending = null; });
+  $("previous-button").onclick = () => { if (state.current > 0) { state.current -= 1; persistActive(); renderQuestion(); } };
+  $("next-button").onclick = () => { if (state.current < state.questions.length - 1) { state.current += 1; persistActive(); renderQuestion(); } else { $("exam-notice").hidden = false; $("exam-notice").textContent = "最後の問題です。問題番号を押すと任意の問題へ移動できます。"; } };
+  $("submit-button").onclick = confirmSubmission;
+  $("confirm-submit").addEventListener("close", () => { if ($("confirm-submit").returnValue === "confirm") submit(false); });
 })();

@@ -14,7 +14,7 @@
         <p>受験番号（4桁）と氏名を入力して開始してください。試験時間は40分です。</p>
         <form id="entry-form">
           <label>受験番号（例：1215）<input id="student-id" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required /></label>
-          <p id="student-id-hint" class="hint">1桁目：学年／2桁目：組／後ろ2桁：出席番号</p>
+          <p id="student-id-hint" class="hint">1桁目：学年／2桁目：組／後ろ2桁：出席番号。同じブラウザでは提出後に再受験できません。</p>
           <label>氏名<input id="student-name" maxlength="60" required /></label>
           <button class="primary" type="submit">試験を開始する</button>
         </form>
@@ -42,9 +42,10 @@
         <div class="score-summary"><div><span>総合</span><strong id="total-score"></strong></div><div><span>正答数</span><strong id="correct-count"></strong></div></div>
         <div id="result-details" class="result-grid"></div>
         <section class="advice"><h2>学習アドバイス</h2><ul id="advice-list"></ul></section>
-        <button id="download-csv" class="primary" type="button">結果をCSVで保存</button>
+        <button id="download-json" class="primary" type="button">結果をJSONで保存</button>
       </section>
     </main>
+    <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button class="primary" value="confirm">この内容で開始する</button></div></form></dialog>
     <dialog id="confirm-submit"><form method="dialog"><h2>提出しますか？</h2><p id="unanswered-message"></p><div class="dialog-actions"><button value="cancel">戻る</button><button id="confirm-submit-button" class="primary" value="confirm">提出する</button></div></form></dialog>
     <script src="question-bank.js"></script>
     <script src="app.js"></script>
