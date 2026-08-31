@@ -79,8 +79,11 @@
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
     $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
-    $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `${stats.total.correct} / 35 問`;
-    $("result-details").innerHTML = [stats.knowledge, stats.thinking, ...stats.domains, stats.it].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
+    $("result-time").textContent = new Date(state.record.session.submitted_at).toLocaleString("ja-JP");
+    $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `正答数　${stats.total.correct} / 35 問`;
+    $("result-details").innerHTML = [stats.knowledge, stats.thinking].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
+    $("domain-results").innerHTML = stats.domains.map(s => `<div><span>${s.label}</span><strong>${Math.round(s.earned / s.max * 100)}%</strong><small>${formatScore(s.earned, s.max)}</small></div>`).join("");
+    $("it-result").innerHTML = `<strong>${stats.it.correct} / ${stats.it.count} 問</strong><span>${Math.round(stats.it.earned / stats.it.max * 100)}%　${formatScore(stats.it.earned, stats.it.max)}</span>`;
     const weak = [...stats.domains, stats.it].filter(s => s.max && s.earned / s.max < .7);
     $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
     $("download-json").onclick = downloadJson; window.scrollTo({ top: 0, behavior: "smooth" });

@@ -35,14 +35,25 @@
         <div id="question-dots" class="question-dots" aria-label="問題一覧"></div>
       </section>
 
-      <section id="result-screen" class="card" hidden>
-        <p class="eyebrow">提出完了</p>
-        <h1>結果</h1>
-        <p id="result-student"></p>
-        <div class="score-summary"><div><span>総合</span><strong id="total-score"></strong></div><div><span>正答数</span><strong id="correct-count"></strong></div></div>
-        <div id="result-details" class="result-grid"></div>
-        <section class="advice"><h2>学習アドバイス</h2><ul id="advice-list"></ul></section>
-        <button id="download-json" class="primary" type="button">結果をJSONで保存</button>
+      <section id="result-screen" class="result-screen" hidden>
+        <header class="result-header"><div><span class="result-mark">I</span><strong>情報I CBT試験</strong></div><p>試験終了　<span id="result-time"></span></p></header>
+        <div class="result-body">
+          <p class="result-lead">あなたの試験結果は以下のとおりです。</p>
+          <p id="result-student" class="result-student"></p>
+          <div class="result-columns">
+            <div>
+              <section class="result-panel total-panel"><h2>総合評価点</h2><strong id="total-score"></strong><span id="correct-count"></span></section>
+              <section class="result-panel"><h2>観点別評価点</h2><div id="result-details" class="score-list"></div></section>
+              <section class="result-panel"><h2>分野別到達度</h2><div id="domain-results" class="score-list compact"></div></section>
+            </div>
+            <div>
+              <section class="result-panel attainment"><h2>到達度について</h2><p>総合得点と2つの観点別得点から、学習の到達状況を確認できます。</p><ul><li>80％以上：十分に到達</li><li>60％以上：おおむね到達</li><li>60％未満：重点的に復習</li></ul></section>
+              <section class="result-panel"><h2>ITパスポート Chapter 12 関連</h2><div id="it-result" class="it-result"></div></section>
+              <section class="result-panel advice"><h2>学習アドバイス</h2><ul id="advice-list"></ul></section>
+            </div>
+          </div>
+          <button id="download-json" class="primary" type="button">結果をJSONで保存</button>
+        </div>
       </section>
     </main>
     <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button class="primary" value="confirm">この内容で開始する</button></div></form></dialog>
