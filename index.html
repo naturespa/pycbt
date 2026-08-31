@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>情報I CBT</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="entry-screen" class="card entry-card">
+        <p class="eyebrow">情報I　アルゴリズム・プログラミング</p>
+        <h1>CBT テスト</h1>
+        <p>受験番号（4桁）と氏名を入力して開始してください。試験時間は40分です。</p>
+        <form id="entry-form">
+          <label>受験番号（例：1215）<input id="student-id" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required /></label>
+          <p id="student-id-hint" class="hint">1桁目：学年／2桁目：組／後ろ2桁：出席番号</p>
+          <label>氏名<input id="student-name" maxlength="60" required /></label>
+          <button class="primary" type="submit">試験を開始する</button>
+        </form>
+      </section>
+
+      <section id="exam-screen" hidden>
+        <header class="exam-header">
+          <div><strong id="student-label"></strong><span id="progress-label"></span></div>
+          <div id="timer" aria-live="polite">残り 40:00</div>
+          <button id="submit-button" class="secondary" type="button">試験を終了して提出</button>
+        </header>
+        <div id="exam-notice" class="notice" hidden></div>
+        <section id="question-card" class="card question-card"></section>
+        <nav class="question-nav" aria-label="問題移動">
+          <button id="previous-button" type="button">前の問題</button>
+          <button id="next-button" class="primary" type="button">次の問題</button>
+        </nav>
+        <div id="question-dots" class="question-dots" aria-label="問題一覧"></div>
+      </section>
+
+      <section id="result-screen" class="card" hidden>
+        <p class="eyebrow">提出完了</p>
+        <h1>結果</h1>
+        <p id="result-student"></p>
+        <div class="score-summary"><div><span>総合</span><strong id="total-score"></strong></div><div><span>正答数</span><strong id="correct-count"></strong></div></div>
+        <div id="result-details" class="result-grid"></div>
+        <section class="advice"><h2>学習アドバイス</h2><ul id="advice-list"></ul></section>
+        <button id="download-csv" class="primary" type="button">結果をCSVで保存</button>
+      </section>
+    </main>
+    <dialog id="confirm-submit"><form method="dialog"><h2>提出しますか？</h2><p id="unanswered-message"></p><div class="dialog-actions"><button value="cancel">戻る</button><button id="confirm-submit-button" class="primary" value="confirm">提出する</button></div></form></dialog>
+    <script src="question-bank.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
