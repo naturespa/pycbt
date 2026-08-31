@@ -8,31 +8,37 @@
   </head>
   <body>
     <main class="app-shell">
-      <section id="entry-screen" class="card entry-card">
-        <p class="eyebrow">情報I　アルゴリズム・プログラミング</p>
-        <h1>CBT テスト</h1>
-        <p>受験番号（4桁）と氏名を入力して開始してください。試験時間は40分です。</p>
-        <form id="entry-form">
+      <section id="entry-screen" class="entry-screen">
+        <header class="cbt-header"><div><span class="cbt-mark">I</span><strong>情報I CBT試験</strong></div><span>アルゴリズム・プログラミング</span></header>
+        <div class="entry-card">
+          <p class="eyebrow">受験者確認</p>
+          <h1>試験を開始する</h1>
+          <p>受験番号（4桁）と氏名を入力し、受験者情報を確認してから開始してください。試験時間は40分です。</p>
+          <section class="entry-notice"><strong>受験上の注意</strong><ul><li>開始後は、画面上部の残り時間を確認してください。</li><li>時間終了時は、解答済みの内容で自動提出されます。</li><li>画面を閉じた場合は、同じブラウザから受験を再開できます。</li></ul></section>
+          <form id="entry-form">
           <label>受験番号（例：1215）<input id="student-id" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required /></label>
           <p id="student-id-hint" class="hint">1桁目：学年／2桁目：組／後ろ2桁：出席番号。同じブラウザでは提出後に再受験できません。</p>
           <label>氏名<input id="student-name" maxlength="60" required /></label>
-          <button class="primary" type="submit">試験を開始する</button>
-        </form>
+            <button class="primary" type="submit">受験者情報を確認する</button>
+          </form>
+        </div>
       </section>
 
       <section id="exam-screen" hidden>
         <header class="exam-header">
-          <div><strong id="student-label"></strong><span id="progress-label"></span></div>
+          <div><span class="header-title">情報I CBT試験</span><strong id="student-label"></strong></div>
           <div id="timer" aria-live="polite">残り 40:00</div>
           <button id="submit-button" class="secondary" type="button">試験を終了して提出</button>
         </header>
         <div id="exam-notice" class="notice" hidden></div>
-        <section id="question-card" class="card question-card"></section>
-        <nav class="question-nav" aria-label="問題移動">
-          <button id="previous-button" type="button">前の問題</button>
-          <button id="next-button" class="primary" type="button">次の問題</button>
-        </nav>
-        <div id="question-dots" class="question-dots" aria-label="問題一覧"></div>
+        <div class="exam-layout">
+          <div>
+            <p id="progress-label" class="progress-label"></p>
+            <section id="question-card" class="card question-card"></section>
+            <nav class="question-nav" aria-label="問題移動"><button id="previous-button" type="button">前の問題</button><button id="next-button" class="primary" type="button">次の問題</button></nav>
+          </div>
+          <aside class="answer-status"><h2>解答状況</h2><p>緑色は解答済みです。</p><div id="question-dots" class="question-dots" aria-label="問題一覧"></div><button id="status-submit-button" class="secondary" type="button">試験を終了して提出</button></aside>
+        </div>
       </section>
 
       <section id="result-screen" class="result-screen" hidden>

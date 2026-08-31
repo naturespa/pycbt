@@ -100,7 +100,7 @@
     if (!name) return;
     const errors = validateBlueprint(QUESTION_BANK);
     if (errors.length) { alert(`問題マスタの検証に失敗しました。\n${errors.join("\n")}`); return; }
-    if (getLocal(completedKey(student.id))) { $("student-id-hint").textContent = "この受験番号は、このブラウザからすでに提出済みです。再受験する場合は先生に申し出てください。"; return; }
+    if (getLocal(completedKey(student.id))) { $("student-id-hint").textContent = "この受験番号は、すでに提出済みです。再受験する場合は先生に申し出てください。"; return; }
     const active = getLocal(activeKey(student.id));
     state.pending = active?.student ? { ...active, student: active.student, resume: true } : { student: { ...student, name }, resume: false };
     $("start-summary").textContent = studentText(state.pending.student); $("resume-message").hidden = !state.pending.resume;
@@ -111,5 +111,6 @@
   $("previous-button").onclick = () => { if (state.current > 0) { state.current -= 1; persistActive(); renderQuestion(); } };
   $("next-button").onclick = () => { if (state.current < state.questions.length - 1) { state.current += 1; persistActive(); renderQuestion(); } else { $("exam-notice").hidden = false; $("exam-notice").textContent = "最後の問題です。問題番号を押すと任意の問題へ移動できます。"; } };
   $("submit-button").onclick = confirmSubmission;
+  $("status-submit-button").onclick = confirmSubmission;
   $("confirm-submit").addEventListener("close", () => { if ($("confirm-submit").returnValue === "confirm") submit(false); });
 })();
