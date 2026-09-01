@@ -1,12 +1,19 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
+  const API_BASE_URL = "https://pycbt-exam-api.curry-grapes.workers.dev";
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
   const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
   const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+  async function api(path, options = {}) {
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { const error = new Error(data.error || "network_error"); error.status = response.status; throw error; }
+    return data;
+  }
   function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v)) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
   function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
@@ -72,10 +79,12 @@
       questions: results.map(q => ({ question_id: q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
     };
   }
-  function submit(auto = false) {
+  async function submit(auto = false) {
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
+    try { await api("/v1/exams/submit", { method: "POST", body: JSON.stringify({ student: state.student, result: state.record }) }); }
+    catch (error) { state.submitted = false; alert(error.status === 409 ? "この受験番号は、すでに提出済みです。" : "提出を保存できませんでした。通信を確認して、もう一度提出してください。"); return; }
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
     $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
@@ -107,7 +116,16 @@
     $("resume-message").textContent = state.pending.resume ? "この受験番号には中断中の試験があります。前回の解答と残り時間を復元します。" : "受験番号と氏名を確認してから開始してください。";
     $("confirm-start").showModal();
   });
-  $("confirm-start").addEventListener("close", () => { if ($("confirm-start").returnValue === "confirm" && state.pending) beginExam(state.pending); state.pending = null; });
+  $("confirm-start").addEventListener("close", async () => {
+    if ($("confirm-start").returnValue !== "confirm" || !state.pending) { state.pending = null; return; }
+    const pending = state.pending;
+    try {
+      const remote = await api("/v1/exams/start", { method: "POST", body: JSON.stringify({ student: pending.student }) });
+      if (remote.status === "active" && !pending.resume) { $("student-id-hint").textContent = "この受験番号は、別の端末で受験中です。先生に申し出てください。"; return; }
+      beginExam(pending);
+    } catch (error) { $("student-id-hint").textContent = error.status === 409 ? "この受験番号は、すでに提出済みです。再受験する場合は先生に申し出てください。" : "受験の開始を確認できません。通信環境を確認して、もう一度試してください。"; }
+    finally { state.pending = null; }
+  });
   $("previous-button").onclick = () => { if (state.current > 0) { state.current -= 1; persistActive(); renderQuestion(); } };
   $("next-button").onclick = () => { if (state.current < state.questions.length - 1) { state.current += 1; persistActive(); renderQuestion(); } else { $("exam-notice").hidden = false; $("exam-notice").textContent = "最後の問題です。問題番号を押すと任意の問題へ移動できます。"; } };
   $("submit-button").onclick = confirmSubmission;
