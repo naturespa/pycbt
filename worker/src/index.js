@@ -17,11 +17,23 @@ async function requireAdmin(request, env) {
   return Boolean(row);
 }
 async function audit(env, action, studentId = null, detail = null) { await env.DB.prepare("INSERT INTO audit_log(action, student_id, detail, created_at) VALUES(?1, ?2, ?3, ?4)").bind(action, studentId, detail, now()).run(); }
+let schemaReady;
+function ensureSchema(env) {
+  if (!schemaReady) schemaReady = env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS exam_sessions (student_id TEXT PRIMARY KEY, grade INTEGER NOT NULL, class_no INTEGER NOT NULL, attendance INTEGER NOT NULL, student_name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','submitted')), started_at TEXT NOT NULL, submitted_at TEXT, result_json TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_sessions (token_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, student_id TEXT, detail TEXT, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exam_sessions_status ON exam_sessions(status)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)")
+  ]);
+  return schemaReady;
+}
 
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(request, env) });
     if (request.headers.get("Origin") && request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return respond(request, env, { error: "origin_not_allowed" }, 403);
+    await ensureSchema(env);
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") return respond(request, env, { ok: true });
     let body = null; try { body = await request.json(); } catch { /* checked per endpoint */ }
