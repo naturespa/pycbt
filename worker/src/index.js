@@ -102,6 +102,12 @@ export default {
       ]);
       return respond(request, env, { reset: true, deleted: total });
     }
+    if (request.method === "GET" && url.pathname === "/v1/admin/export") {
+      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const rows = await env.DB.prepare("SELECT student_id, grade, class_no, attendance, student_name, status, started_at, submitted_at, result_json FROM exam_sessions WHERE status = 'submitted' ORDER BY student_id").all();
+      const submissions = rows.results.map(row => { let result = null; try { result = JSON.parse(row.result_json || "null"); } catch { /* damaged legacy record */ } return { ...row, result }; });
+      return respond(request, env, { submissions });
+    }
     if (request.method === "GET" && url.pathname === "/v1/admin/teachers") {
       if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
       const rows = await env.DB.prepare("SELECT teacher_id, display_name, created_at FROM teacher_accounts ORDER BY teacher_id").all(); return respond(request, env, { teachers: rows.results });
