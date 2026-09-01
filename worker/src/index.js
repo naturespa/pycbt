@@ -13,8 +13,7 @@ function constantTimeEqual(left, right) { if (left.length !== right.length) retu
 function tokenFrom(request) { const header = request.headers.get("Authorization") || ""; return header.startsWith("Bearer ") ? header.slice(7) : ""; }
 async function requireAdmin(request, env) {
   const token = tokenFrom(request); if (!token) return false;
-  const row = await env.DB.prepare("SELECT token_hash FROM admin_sessions WHERE token_hash = ?1 AND expires_at > ?2").bind(await hash(token), now()).first();
-  return Boolean(row);
+  return env.DB.prepare("SELECT a.teacher_id FROM admin_sessions s LEFT JOIN admin_session_actors a ON a.token_hash = s.token_hash WHERE s.token_hash = ?1 AND s.expires_at > ?2").bind(await hash(token), now()).first();
 }
 async function audit(env, action, studentId = null, detail = null) { await env.DB.prepare("INSERT INTO audit_log(action, student_id, detail, created_at) VALUES(?1, ?2, ?3, ?4)").bind(action, studentId, detail, now()).run(); }
 let schemaReady;
@@ -22,6 +21,8 @@ function ensureSchema(env) {
   if (!schemaReady) schemaReady = env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS exam_sessions (student_id TEXT PRIMARY KEY, grade INTEGER NOT NULL, class_no INTEGER NOT NULL, attendance INTEGER NOT NULL, student_name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','submitted')), started_at TEXT NOT NULL, submitted_at TEXT, result_json TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_sessions (token_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS teacher_accounts (teacher_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_session_actors (token_hash TEXT PRIMARY KEY, teacher_id TEXT NOT NULL)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, student_id TEXT, detail TEXT, created_at TEXT NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exam_sessions_status ON exam_sessions(status)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)")
@@ -55,9 +56,13 @@ export default {
       await audit(env, "exam_submitted", id); return respond(request, env, { status: "submitted" });
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/login") {
-      if (!env.TEACHER_PASSWORD || typeof body?.password !== "string" || !constantTimeEqual(body.password, env.TEACHER_PASSWORD)) return respond(request, env, { error: "invalid_credentials" }, 401);
+      const teacherId = String(body?.teacher_id || "admin").trim();
+      const password = body?.password;
+      let valid = teacherId === "admin" && env.TEACHER_PASSWORD && typeof password === "string" && constantTimeEqual(password, env.TEACHER_PASSWORD);
+      if (!valid && typeof password === "string") { const account = await env.DB.prepare("SELECT password_hash FROM teacher_accounts WHERE teacher_id = ?1").bind(teacherId).first(); valid = Boolean(account && account.password_hash === await hash(password)); }
+      if (!valid) return respond(request, env, { error: "invalid_credentials" }, 401);
       const token = crypto.randomUUID() + crypto.randomUUID(); const expires = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      await env.DB.prepare("INSERT INTO admin_sessions(token_hash, expires_at, created_at) VALUES(?1, ?2, ?3)").bind(await hash(token), expires, now()).run(); await audit(env, "admin_login");
+      const tokenHash = await hash(token); await env.DB.prepare("INSERT INTO admin_sessions(token_hash, expires_at, created_at) VALUES(?1, ?2, ?3)").bind(tokenHash, expires, now()).run(); await env.DB.prepare("INSERT INTO admin_session_actors(token_hash, teacher_id) VALUES(?1, ?2)").bind(tokenHash, teacherId).run(); await audit(env, "admin_login", null, teacherId);
       return respond(request, env, { token, expires_at: expires });
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/students") {
@@ -65,9 +70,19 @@ export default {
       const rows = await env.DB.prepare("SELECT student_id, grade, class_no, attendance, student_name, status, started_at, submitted_at FROM exam_sessions ORDER BY student_id").all(); return respond(request, env, { students: rows.results });
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/reset") {
-      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const admin = await requireAdmin(request, env); if (!admin) return respond(request, env, { error: "unauthorized" }, 401);
       const id = body?.student_id; if (!/^[1-3][1-9]\d{2}$/.test(id || "")) return respond(request, env, { error: "invalid_student_id" }, 400);
-      const deleted = await env.DB.prepare("DELETE FROM exam_sessions WHERE student_id = ?1").bind(id).run(); await audit(env, "student_reset", id, body?.reason?.slice(0, 200) || null); return respond(request, env, { reset: deleted.meta.changes === 1 });
+      const deleted = await env.DB.prepare("DELETE FROM exam_sessions WHERE student_id = ?1").bind(id).run(); await audit(env, "student_reset", id, `${admin.teacher_id}: ${body?.reason?.slice(0, 180) || ""}`); return respond(request, env, { reset: deleted.meta.changes === 1 });
+    }
+    if (request.method === "GET" && url.pathname === "/v1/admin/teachers") {
+      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const rows = await env.DB.prepare("SELECT teacher_id, display_name, created_at FROM teacher_accounts ORDER BY teacher_id").all(); return respond(request, env, { teachers: rows.results });
+    }
+    if (request.method === "POST" && url.pathname === "/v1/admin/teachers") {
+      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const id = String(body?.teacher_id || "").trim(); const name = String(body?.display_name || "").trim(); const password = body?.password;
+      if (!/^[a-zA-Z0-9_-]{3,32}$/.test(id) || !name || name.length > 60 || typeof password !== "string" || password.length < 12) return respond(request, env, { error: "invalid_teacher" }, 400);
+      await env.DB.prepare("INSERT INTO teacher_accounts(teacher_id, display_name, password_hash, created_at) VALUES(?1, ?2, ?3, ?4)").bind(id, name, await hash(password), now()).run(); await audit(env, "teacher_created", null, id); return respond(request, env, { created: true }, 201);
     }
     return respond(request, env, { error: "not_found" }, 404);
   }
