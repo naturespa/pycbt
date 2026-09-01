@@ -26,3 +26,4 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS exam_sessions_status_idx ON exam_sessions(status);
 CREATE INDEX IF NOT EXISTS audit_log_student_idx ON audit_log(student_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log(created_at DESC);

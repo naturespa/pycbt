@@ -95,13 +95,7 @@
     $("it-result").innerHTML = `<strong>${stats.it.correct} / ${stats.it.count} 問</strong><span>${Math.round(stats.it.earned / stats.it.max * 100)}%　${formatScore(stats.it.earned, stats.it.max)}</span>`;
     const weak = [...stats.domains, stats.it].filter(s => s.max && s.earned / s.max < .7);
     $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
-    $("download-json").onclick = downloadJson; window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-  function downloadJson() {
-    const blob = new Blob([JSON.stringify(state.record, null, 2)], { type: "application/json;charset=utf-8" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
-    link.download = `pycbt_${state.student.id}_${state.record.session.submitted_at.slice(0, 10)}.json`;
-    link.click(); URL.revokeObjectURL(link.href);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
@@ -123,7 +117,7 @@
       const remote = await api("/v1/exams/start", { method: "POST", body: JSON.stringify({ student: pending.student }) });
       if (remote.status === "active" && !pending.resume) { $("student-id-hint").textContent = "この受験番号は、別の端末で受験中です。先生に申し出てください。"; return; }
       beginExam(pending);
-    } catch (error) { $("student-id-hint").textContent = error.status === 409 ? "この受験番号は、すでに提出済みです。再受験する場合は先生に申し出てください。" : "受験の開始を確認できません。通信環境を確認して、もう一度試してください。"; }
+    } catch (error) { $("student-id-hint").textContent = error.status === 409 ? "この受験番号は、すでに提出済みです。再受験する場合は先生に申し出てください。" : "受験台帳サーバーに接続できません。学校のWebフィルターで接続先が遮断されている可能性があります。この画面を先生に見せてください。"; }
     finally { state.pending = null; }
   });
   $("previous-button").onclick = () => { if (state.current > 0) { state.current -= 1; persistActive(); renderQuestion(); } };

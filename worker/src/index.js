@@ -25,7 +25,8 @@ function ensureSchema(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_session_actors (token_hash TEXT PRIMARY KEY, teacher_id TEXT NOT NULL)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, student_id TEXT, detail TEXT, created_at TEXT NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_exam_sessions_status ON exam_sessions(status)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)")
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)")
   ]);
   return schemaReady;
 }
@@ -67,12 +68,28 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/students") {
       if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
-      const rows = await env.DB.prepare("SELECT student_id, grade, class_no, attendance, student_name, status, started_at, submitted_at FROM exam_sessions ORDER BY student_id").all(); return respond(request, env, { students: rows.results });
+      const rows = await env.DB.prepare("SELECT student_id, grade, class_no, attendance, student_name, status, started_at, submitted_at, json_extract(result_json, '$.scores.total.earned') AS total_score, json_extract(result_json, '$.scores.total.max') AS max_score FROM exam_sessions ORDER BY student_id").all(); return respond(request, env, { students: rows.results });
+    }
+    const studentDetail = url.pathname.match(/^\/v1\/admin\/students\/([1-3][1-9]\d{2})$/);
+    if (request.method === "GET" && studentDetail) {
+      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const row = await env.DB.prepare("SELECT student_id, grade, class_no, attendance, student_name, status, started_at, submitted_at, result_json FROM exam_sessions WHERE student_id = ?1").bind(studentDetail[1]).first();
+      if (!row) return respond(request, env, { error: "student_not_found" }, 404);
+      let result = null; try { result = row.result_json ? JSON.parse(row.result_json) : null; } catch { return respond(request, env, { error: "invalid_result_data" }, 500); }
+      const { result_json, ...student } = row; return respond(request, env, { student, result });
+    }
+    if (request.method === "GET" && url.pathname === "/v1/admin/audit") {
+      if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
+      const rows = await env.DB.prepare("SELECT id, action, student_id, detail, created_at FROM audit_log ORDER BY id DESC LIMIT 100").all(); return respond(request, env, { logs: rows.results });
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/reset") {
       const admin = await requireAdmin(request, env); if (!admin) return respond(request, env, { error: "unauthorized" }, 401);
-      const id = body?.student_id; if (!/^[1-3][1-9]\d{2}$/.test(id || "")) return respond(request, env, { error: "invalid_student_id" }, 400);
-      const deleted = await env.DB.prepare("DELETE FROM exam_sessions WHERE student_id = ?1").bind(id).run(); await audit(env, "student_reset", id, `${admin.teacher_id}: ${body?.reason?.slice(0, 180) || ""}`); return respond(request, env, { reset: deleted.meta.changes === 1 });
+      const id = body?.student_id; const reason = String(body?.reason || "").trim();
+      if (!/^[1-3][1-9]\d{2}$/.test(id || "")) return respond(request, env, { error: "invalid_student_id" }, 400);
+      if (!reason || reason.length > 180) return respond(request, env, { error: "invalid_reason" }, 400);
+      const deleted = await env.DB.prepare("DELETE FROM exam_sessions WHERE student_id = ?1").bind(id).run();
+      if (deleted.meta.changes !== 1) return respond(request, env, { error: "student_not_found" }, 404);
+      await audit(env, "student_reset", id, `${admin.teacher_id}: ${reason}`); return respond(request, env, { reset: true });
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/teachers") {
       if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
