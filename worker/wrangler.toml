@@ -1,0 +1,14 @@
+name = "pycbt-exam-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pycbt-exam-ledger"
+database_id = "18c1b3bb-ac0b-4c1f-887b-f4c942b67780"
+
+[vars]
+ALLOWED_ORIGIN = "https://naturespa.github.io"
+
+# Set this after deployment. Never add it to this file or commit it.
+# npx wrangler secret put TEACHER_PASSWORD
