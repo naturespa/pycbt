@@ -1,5 +1,5 @@
 (() => {
-  const API="https://pycbt-exam-api.curry-grapes.workers.dev", $=id=>document.getElementById(id), text=v=>String(v??""), time=v=>v?new Date(v).toLocaleString("ja-JP"):"—";
+  const API="https://zztqjwqwyfscwumneak.supabase.co/functions/v1/exam-api", $=id=>document.getElementById(id), text=v=>String(v??""), time=v=>v?new Date(v).toLocaleString("ja-JP"):"—";
   const actionNames={exam_started:"受験開始",exam_submitted:"提出",student_reset:"再受験許可",reset_all:"オールリセット",admin_login:"管理画面ログイン",teacher_created:"教員追加"};
   let token=sessionStorage.getItem("pycbt-admin-token")||"",students=[],resetTarget=null;
   async function call(path,opt={}){const r=await fetch(API+path,{...opt,headers:{"content-type":"application/json",...(token?{authorization:`Bearer ${token}`}:{})}}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||"network_error");e.status=r.status;throw e}return d}

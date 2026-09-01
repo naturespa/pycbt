@@ -24,6 +24,18 @@
 
 ## 受験制御の範囲
 
+## Supabase 版の運用
+
+本番の提出台帳は Supabase Edge Function `exam-api` に接続します。ブラウザはデータベースへ直接アクセスせず、提出・再受験判定・管理画面操作は Edge Function を経由します。
+
+- `supabase/schema.sql` を SQL Editor で一度だけ実行する。
+- `supabase/functions/exam-api/index.ts` を `exam-api` として公開する。
+- Edge Function の **Verify JWT with legacy secret** を OFF にする。
+- Edge Function Secrets に `TEACHER_PASSWORD` を12文字以上で設定する。値はGitHubへ保存しない。
+- `app.js` と `admin.js` の `API_BASE_URL` / `API` はこの Function URL を指定する。
+
+テーブルはRLSと権限削除によりブラウザから直接参照できません。教員の初回ログインは ID `admin` と `TEACHER_PASSWORD` です。ログイン後、管理画面から追加の担当教員IDを作成できます。
+
 GitHub Pages版はサーバーを持たないため、同一ブラウザ内では提出後の再受験を止め、中断時は同じ受験を復元します。ただし、別端末・別ブラウザ・ブラウザデータ消去まで防ぐには、ログインとサーバー側の受験台帳が必要です。
 
 再受験を許可する場合は、教員が対象端末でブラウザの鍵アイコンから「サイトの設定」を開き、このサイトの保存データを削除してからページを再読み込みします。保存中のほかの受験情報も消えるため、同一端末で複数人の受験中データがないことを確認して実施してください。

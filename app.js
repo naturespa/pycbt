@@ -1,7 +1,8 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
-  const API_BASE_URL = "https://pycbt-exam-api.curry-grapes.workers.dev";
+  // Supabase Edge Function.  The browser never accesses database tables directly.
+  const API_BASE_URL = "https://zztqjwqwyfscwumneak.supabase.co/functions/v1/exam-api";
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
