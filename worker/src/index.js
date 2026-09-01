@@ -91,6 +91,17 @@ export default {
       if (deleted.meta.changes !== 1) return respond(request, env, { error: "student_not_found" }, 404);
       await audit(env, "student_reset", id, `${admin.teacher_id}: ${reason}`); return respond(request, env, { reset: true });
     }
+    if (request.method === "POST" && url.pathname === "/v1/admin/reset-all") {
+      const admin = await requireAdmin(request, env); if (!admin) return respond(request, env, { error: "unauthorized" }, 401);
+      const reason = String(body?.reason || "").trim();
+      if (!reason || reason.length > 180 || body?.confirmation !== "全件削除") return respond(request, env, { error: "invalid_confirmation" }, 400);
+      const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM exam_sessions").first(); const total = Number(count?.total || 0);
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM exam_sessions"),
+        env.DB.prepare("INSERT INTO audit_log(action, student_id, detail, created_at) VALUES('reset_all', NULL, ?1, ?2)").bind(`${admin.teacher_id}: ${reason} (${total} records)`, now())
+      ]);
+      return respond(request, env, { reset: true, deleted: total });
+    }
     if (request.method === "GET" && url.pathname === "/v1/admin/teachers") {
       if (!await requireAdmin(request, env)) return respond(request, env, { error: "unauthorized" }, 401);
       const rows = await env.DB.prepare("SELECT teacher_id, display_name, created_at FROM teacher_accounts ORDER BY teacher_id").all(); return respond(request, env, { teachers: rows.results });
