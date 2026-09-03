@@ -29,6 +29,7 @@
     if (!$("student-name").value.trim() && account.name) $("student-name").value = account.name;
   }
   async function initializeAuth() {
+    document.documentElement.dataset.pycbtAuthInit = "entered";
     if (!window.msal) { $("signin-status").textContent = "認証モジュールを読み込めませんでした。通信環境を確認してください。"; return; }
     try {
       msalClient = new window.msal.PublicClientApplication(ENTRA_CONFIG);
@@ -185,5 +186,6 @@
   $("status-submit-button").onclick = confirmSubmission;
   $("confirm-submit").addEventListener("close", () => { if ($("confirm-submit").returnValue === "confirm") submit(false); });
   $("signin-button").onclick = signIn;
+  document.documentElement.dataset.pycbtAuthCall = "yes";
   initializeAuth();
 })();
