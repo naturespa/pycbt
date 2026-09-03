@@ -42,6 +42,7 @@
     } catch (error) {
       // Keep the learner-facing message simple, while retaining the exact cause for teacher diagnostics.
       console.error("MSAL initialization failed", error?.errorCode || "", error?.message || error);
+      $("signin-status").dataset.error = `${error?.errorCode || ""}: ${error?.message || error}`;
       $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。";
     }
   }
