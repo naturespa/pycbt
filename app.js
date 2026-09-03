@@ -34,7 +34,8 @@
       await msalClient.initialize?.();
       const result = await msalClient.handleRedirectPromise();
       setSignedInAccount(result?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]);
-      if (state.identity) {
+      if (result?.accessToken) setFlowReady();
+      else if (state.identity) {
         try { await getFlowToken(false); setFlowReady(); }
         catch { $("signin-status").textContent = "学校アカウントでサインインし、提出権限を確認してください。"; }
       }
@@ -43,9 +44,8 @@
   async function signIn() {
     if (!msalClient) { $("signin-status").textContent = "認証モジュールの準備中です。少し待ってから再度押してください。"; return; }
     try {
-      const result = await msalClient.loginPopup({ scopes: ["openid", "profile", "email"] });
-      msalClient.setActiveAccount(result.account); setSignedInAccount(result.account);
-      await getFlowToken(true); setFlowReady();
+      // Redirect is more reliable than popups on managed school browsers.
+      await msalClient.loginRedirect({ scopes: ["openid", "profile", "email", ...FLOW_SCOPES] });
     } catch (error) { $("signin-status").textContent = "サインインを完了できませんでした。学校アカウントを選択して、もう一度試してください。"; }
   }
   function setFlowReady() {
