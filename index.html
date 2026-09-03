@@ -14,6 +14,11 @@
           <p class="eyebrow">受験者確認</p>
           <h1>試験を開始する</h1>
           <p>受験番号（4桁）と氏名を入力し、受験者情報を確認してから開始してください。試験時間は40分です。</p>
+          <section class="entry-notice" aria-labelledby="signin-heading">
+            <strong id="signin-heading">Microsoft 365 認証</strong>
+            <p id="signin-status" class="hint">学校の Microsoft 365 アカウントでサインインしてください。</p>
+            <button id="signin-button" class="secondary" type="button">Microsoft 365 にサインイン</button>
+          </section>
           <section class="entry-notice"><strong>受験上の注意</strong><ul><li>開始後は、画面上部の残り時間を確認してください。</li><li>時間終了時は、解答済みの内容で自動提出されます。</li><li>画面を閉じた場合は、同じブラウザから受験を再開できます。</li></ul></section>
           <form id="entry-form">
           <label>受験番号（例：1215）<input id="student-id" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required /></label>
@@ -64,6 +69,7 @@
     <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button class="primary" value="confirm">この内容で開始する</button></div></form></dialog>
     <dialog id="confirm-submit"><form method="dialog"><h2>提出しますか？</h2><p id="unanswered-message"></p><div class="dialog-actions"><button value="cancel">戻る</button><button id="confirm-submit-button" class="primary" value="confirm">提出する</button></div></form></dialog>
     <script src="question-bank.js"></script>
+    <script src="https://alcdn.msauth.net/browser/3.28.1/js/msal-browser.min.js" crossorigin="anonymous"></script>
     <script src="app.js"></script>
   </body>
 </html>
