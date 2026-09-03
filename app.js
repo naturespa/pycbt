@@ -1,4 +1,5 @@
 (() => {
+  document.documentElement.dataset.pycbtAppExecuted = "yes";
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
   // This endpoint requires a Microsoft Entra access token. The SAS signature
