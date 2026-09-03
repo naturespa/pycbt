@@ -33,8 +33,11 @@
     if (!window.msal) { $("signin-status").textContent = "認証モジュールを読み込めませんでした。通信環境を確認してください。"; return; }
     try {
       msalClient = new window.msal.PublicClientApplication(ENTRA_CONFIG);
+      document.documentElement.dataset.pycbtAuthStage = "client-created";
       await msalClient.initialize?.();
+      document.documentElement.dataset.pycbtAuthStage = "initialized";
       const result = await msalClient.handleRedirectPromise();
+      document.documentElement.dataset.pycbtAuthStage = "redirect-handled";
       setSignedInAccount(result?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]);
       if (result?.accessToken) setFlowReady();
       else if (state.identity) {
