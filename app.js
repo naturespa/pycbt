@@ -39,7 +39,11 @@
         try { await getFlowToken(false); setFlowReady(); }
         catch { $("signin-status").textContent = "学校アカウントでサインインし、提出権限を確認してください。"; }
       }
-    } catch (error) { $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。"; }
+    } catch (error) {
+      // Keep the learner-facing message simple, while retaining the exact cause for teacher diagnostics.
+      console.error("MSAL initialization failed", error?.errorCode || "", error?.message || error);
+      $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。";
+    }
   }
   async function signIn() {
     if (!msalClient) { $("signin-status").textContent = "認証モジュールの準備中です。少し待ってから再度押してください。"; return; }
