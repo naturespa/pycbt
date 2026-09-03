@@ -68,8 +68,9 @@
     </main>
     <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button class="primary" value="confirm">この内容で開始する</button></div></form></dialog>
     <dialog id="confirm-submit"><form method="dialog"><h2>提出しますか？</h2><p id="unanswered-message"></p><div class="dialog-actions"><button value="cancel">戻る</button><button id="confirm-submit-button" class="primary" value="confirm">提出する</button></div></form></dialog>
-    <script src="question-bank.js"></script>
-    <script src="vendor/msal-browser.min.js?v=2"></script>
-    <script src="app.js?v=2"></script>
+    <script>window.addEventListener("error", (event) => { document.documentElement.dataset.scriptError = event.message || "script-error"; });</script>
+    <script src="question-bank.js" onload="document.documentElement.dataset.questionBankLoaded='yes'" onerror="document.documentElement.dataset.questionBankLoaded='error'"></script>
+    <script src="vendor/msal-browser.min.js?v=2" onload="document.documentElement.dataset.msalLoaded='yes'" onerror="document.documentElement.dataset.msalLoaded='error'"></script>
+    <script src="app.js?v=2" onload="document.documentElement.dataset.appLoaded='yes'" onerror="document.documentElement.dataset.appLoaded='error'"></script>
   </body>
 </html>
