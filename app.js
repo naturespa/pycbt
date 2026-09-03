@@ -13,7 +13,7 @@
     cache: { cacheLocation: "sessionStorage" }
   };
   const FLOW_SCOPES = ["https://service.flow.microsoft.com//.default"];
-  const state = { student: null, identity: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
+  const state = { student: null, identity: null, flowReady: false, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   let msalClient = null;
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
@@ -23,9 +23,8 @@
   function setSignedInAccount(account) {
     if (!account) return;
     state.identity = { object_id: account.localAccountId, tenant_id: account.tenantId, username: account.username, display_name: account.name || "" };
-    $("signin-status").textContent = `サインイン済み：${account.name || account.username}（${account.username}）`;
-    $("signin-button").textContent = "サインイン済み";
-    $("signin-button").disabled = true;
+    $("signin-status").textContent = `サインイン済み：${account.name || account.username}（提出権限を確認中）`;
+    $("signin-button").textContent = "提出権限を確認する";
     if (!$("student-name").value.trim() && account.name) $("student-name").value = account.name;
   }
   async function initializeAuth() {
@@ -35,6 +34,10 @@
       await msalClient.initialize?.();
       const result = await msalClient.handleRedirectPromise();
       setSignedInAccount(result?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]);
+      if (state.identity) {
+        try { await getFlowToken(false); setFlowReady(); }
+        catch { $("signin-status").textContent = "学校アカウントでサインインし、提出権限を確認してください。"; }
+      }
     } catch (error) { $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。"; }
   }
   async function signIn() {
@@ -42,13 +45,20 @@
     try {
       const result = await msalClient.loginPopup({ scopes: ["openid", "profile", "email"] });
       msalClient.setActiveAccount(result.account); setSignedInAccount(result.account);
+      await getFlowToken(true); setFlowReady();
     } catch (error) { $("signin-status").textContent = "サインインを完了できませんでした。学校アカウントを選択して、もう一度試してください。"; }
   }
-  async function getFlowToken() {
+  function setFlowReady() {
+    state.flowReady = true;
+    $("signin-status").textContent = `認証済み：${state.identity.display_name || state.identity.username}（学校アカウント）`;
+    $("signin-button").textContent = "認証済み";
+    $("signin-button").disabled = true;
+  }
+  async function getFlowToken(interactive = true) {
     if (!msalClient || !state.identity) throw new Error("not_signed_in");
     const account = msalClient.getActiveAccount() || msalClient.getAllAccounts().find(a => a.localAccountId === state.identity.object_id);
     try { return (await msalClient.acquireTokenSilent({ account, scopes: FLOW_SCOPES })).accessToken; }
-    catch (error) { return (await msalClient.acquireTokenPopup({ account, scopes: FLOW_SCOPES })).accessToken; }
+    catch (error) { if (!interactive) throw error; return (await msalClient.acquireTokenPopup({ account, scopes: FLOW_SCOPES })).accessToken; }
   }
   async function submitToLedger(payload) {
     const accessToken = await getFlowToken();
@@ -145,7 +155,7 @@
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
-    if (!state.identity) { $("student-id-hint").textContent = "受験を開始する前に、学校の Microsoft 365 アカウントでサインインしてください。"; return; }
+    if (!state.identity || !state.flowReady) { $("student-id-hint").textContent = "受験を開始する前に、学校の Microsoft 365 アカウントでサインインし、提出権限を確認してください。"; return; }
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
     const errors = validateBlueprint(QUESTION_BANK);
