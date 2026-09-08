@@ -48,7 +48,6 @@
   async function signIn() {
     if (!msalClient) { $("signin-status").textContent = "認証モジュールの準備中です。少し待ってから再度押してください。"; return; }
     try {
-      // Redirect is more reliable than popups on managed school browsers.
       await msalClient.loginRedirect({ scopes: ["openid", "profile", "email", ...FLOW_SCOPES] });
     } catch (error) { $("signin-status").textContent = "サインインを完了できませんでした。学校アカウントを選択して、もう一度試してください。"; }
   }
@@ -103,7 +102,10 @@
     if (remaining <= 0) submit(true);
   }
   function beginExam(session) {
-    state.student = session.student; state.questions = [...QUESTION_BANK]; state.answers = session.answers ?? {}; state.current = session.current ?? 0;
+    state.student = session.student;
+    state.questions = generateExamForStudent(state.student.id);
+    state.answers = session.answers ?? {};
+    state.current = session.current ?? 0;
     state.startedAt = session.started_at ?? new Date().toISOString();
     state.endsAt = session.ends_at ?? new Date(Date.now() + EXAM_BLUEPRINT.durationSeconds * 1000).toISOString();
     state.submitted = false;
@@ -136,7 +138,7 @@
       authenticated_user: state.identity,
       session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
       scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
-      questions: results.map(q => ({ question_id: q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
+      questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
     };
   }
   async function submit(auto = false) {
