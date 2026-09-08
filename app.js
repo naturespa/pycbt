@@ -1,7 +1,8 @@
 (() => {
-  document.documentElement.dataset.pycbtAppExecuted = "yes";
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
+  // Temporary local operation while tenant consent is pending.
+  const MICROSOFT_AUTH_ENABLED = false;
   // This endpoint requires a Microsoft Entra access token. The SAS signature
   // is deliberately not published in the GitHub Pages source.
   const POWER_AUTOMATE_SUBMIT_URL = "https://default90f43b6c2cf14ccbba35c4ea895ed8.c3.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/11/workflows/583309cc3f8c4037adda534ce7243c37/triggers/manual/paths/invoke?api-version=1";
@@ -29,15 +30,11 @@
     if (!$("student-name").value.trim() && account.name) $("student-name").value = account.name;
   }
   async function initializeAuth() {
-    document.documentElement.dataset.pycbtAuthInit = "entered";
     if (!window.msal) { $("signin-status").textContent = "認証モジュールを読み込めませんでした。通信環境を確認してください。"; return; }
     try {
       msalClient = new window.msal.PublicClientApplication(ENTRA_CONFIG);
-      document.documentElement.dataset.pycbtAuthStage = "client-created";
       await msalClient.initialize?.();
-      document.documentElement.dataset.pycbtAuthStage = "initialized";
       const result = await msalClient.handleRedirectPromise();
-      document.documentElement.dataset.pycbtAuthStage = "redirect-handled";
       setSignedInAccount(result?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]);
       if (result?.accessToken) setFlowReady();
       else if (state.identity) {
@@ -45,9 +42,6 @@
         catch { $("signin-status").textContent = "学校アカウントでサインインし、提出権限を確認してください。"; }
       }
     } catch (error) {
-      // Keep the learner-facing message simple, while retaining the exact cause for teacher diagnostics.
-      console.error("MSAL initialization failed", error?.errorCode || "", error?.message || error);
-      $("signin-status").dataset.error = `${error?.errorCode || ""}: ${error?.message || error}`;
       $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。";
     }
   }
@@ -149,7 +143,10 @@
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
-    try { await submitToLedger({ student: state.student, result: state.record }); }
+    try {
+      if (MICROSOFT_AUTH_ENABLED) await submitToLedger({ student: state.student, result: state.record });
+      else setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
+    }
     catch (error) { state.submitted = false; alert(error.status === 409 ? "この受験番号は、すでに提出済みです。" : "提出を保存できませんでした。通信を確認して、もう一度提出してください。"); return; }
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
@@ -165,7 +162,7 @@
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
-    if (!state.identity || !state.flowReady) { $("student-id-hint").textContent = "受験を開始する前に、学校の Microsoft 365 アカウントでサインインし、提出権限を確認してください。"; return; }
+    if (MICROSOFT_AUTH_ENABLED && (!state.identity || !state.flowReady)) { $("student-id-hint").textContent = "受験を開始する前に、学校の Microsoft 365 アカウントでサインインし、提出権限を確認してください。"; return; }
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
     const errors = validateBlueprint(QUESTION_BANK);
@@ -188,7 +185,17 @@
   $("submit-button").onclick = confirmSubmission;
   $("status-submit-button").onclick = confirmSubmission;
   $("confirm-submit").addEventListener("close", () => { if ($("confirm-submit").returnValue === "confirm") submit(false); });
-  $("signin-button").onclick = signIn;
-  document.documentElement.dataset.pycbtAuthCall = "yes";
-  initializeAuth();
+  $("download-result").onclick = () => {
+    if (!state.record) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(state.record, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `CBT_${state.student.id}_${state.record.session.submitted_at.replace(/[:.]/g, "-")}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  if (MICROSOFT_AUTH_ENABLED) {
+    $("signin-button").onclick = signIn;
+    initializeAuth();
+  }
 })();
