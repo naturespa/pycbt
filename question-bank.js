@@ -1,15 +1,15 @@
 /*
  * 情報I CBT 問題マスタ
- * 35個の出題スロットを維持しつつ、受験番号をseedとして各スロットを個別化する。
+ * 45個の出題スロットを維持しつつ、受験番号をseedとして各スロットを個別化する。
  * これにより、同じ受験番号では常に同じ問題セットを再現し、隣接番号では
  * variant・選択肢順・問題順が変わる。将来は各スロットの実問題variantsを追加可能。
  */
-const QUESTION_BANK_CAPACITY = 181;
+const QUESTION_BANK_CAPACITY = 225;
 const EXAM_BLUEPRINT = {
-  totalQuestions: 35, totalPoints: 100, durationSeconds: 40 * 60,
-  domains: { A: 5, B: 3, C: 6, D: 7, E: 6, F: 8 },
-  viewpoints: { knowledge: { questions: 15, points: 40 }, thinking: { questions: 20, points: 60 } },
-  formats: { choice: 25, input: 10 }, itPassport: 10,
+  totalQuestions: 45, totalPoints: 100, durationSeconds: 40 * 60,
+  domains: { A: 6, B: 4, C: 8, D: 9, E: 8, F: 10 },
+  viewpoints: { knowledge: { questions: 20, points: 40 }, thinking: { questions: 25, points: 60 } },
+  formats: { choice: 35, input: 10 }, itPassport: 10,
   visuals: { A: 2, E: 2, F: 2 }
 };
 
@@ -55,7 +55,7 @@ function validateBlueprint(questions) {
   const count = (predicate) => questions.filter(predicate).length;
   const sum = (predicate) => questions.filter(predicate).reduce((total, q) => total + q.points, 0);
   const errors = [];
-  if (questions.length !== EXAM_BLUEPRINT.totalQuestions) errors.push("問題数が35問ではありません。");
+  if (questions.length !== EXAM_BLUEPRINT.totalQuestions) errors.push(`問題数が${EXAM_BLUEPRINT.totalQuestions}問ではありません。`);
   if (sum(() => true) !== EXAM_BLUEPRINT.totalPoints) errors.push("合計点が100点ではありません。");
   for (const [domain, expected] of Object.entries(EXAM_BLUEPRINT.domains)) if (count(q => q.domain === domain) !== expected) errors.push(`${domain}分野の問題数が一致しません。`);
   for (const [viewpoint, spec] of Object.entries(EXAM_BLUEPRINT.viewpoints)) if (count(q => q.viewpoint === viewpoint) !== spec.questions || sum(q => q.viewpoint === viewpoint) !== spec.points) errors.push(`${viewpoint}の配点が一致しません。`);
@@ -204,8 +204,8 @@ function generateExamForStudent(studentId) {
   return shuffled(questions, rng);
 }
 
-// app.js の [...QUESTION_BANK] はこのiteratorを通る。
-// validateBlueprint() の filter/reduce は元の35スロットを検証するため従来どおり動く。
+// 旧形式のプレビューで [...QUESTION_BANK] を使う場合は、このiteratorを通る。
+// 本番画面の検証対象は、pool-engineが生成する45問の問題セットである。
 Object.defineProperty(QUESTION_BANK, Symbol.iterator, {
   configurable: true,
   value: function* () {

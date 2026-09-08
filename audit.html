@@ -23,7 +23,7 @@
     </div>
     <div class="audit-grid">
       <div class="audit-card"><span>想定受験者</span><strong id="student-count">280</strong></div>
-      <div class="audit-card"><span>1人あたり</span><strong>35問</strong></div>
+      <div class="audit-card"><span>1人あたり</span><strong>45問</strong></div>
       <div class="audit-card"><span>隣接番号 最大同一問題</span><strong id="max-adjacent">—</strong></div>
       <div class="audit-card"><span>完全一致セット</span><strong id="duplicate-sets">—</strong></div>
     </div>
@@ -40,7 +40,7 @@
     <div class="audit-grid">
       <div class="audit-card"><span>同一問題ID</span><strong id="same-count">—</strong></div>
       <div class="audit-card"><span>同一率</span><strong id="same-rate">—</strong></div>
-      <div class="audit-card"><span>同じ出題枠</span><strong>35 / 35</strong></div>
+      <div class="audit-card"><span>同じ出題枠</span><strong>45 / 45</strong></div>
     </div>
     <p id="compare-note" class="small-note">同じ出題枠でも、variantや数値・選択肢順が異なる場合があります。</p>
   </section>
@@ -50,10 +50,18 @@
     <div class="table-wrap"><table><thead><tr><th>クラス</th><th>人数</th><th>隣接平均</th><th>隣接最大</th><th>隣接最小</th><th>完全一致セット</th></tr></thead><tbody id="class-rows"></tbody></table></div>
   </section>
 </main>
-<script src="question-bank.js?v=20260908-audit"></script>
+<script src="question-bank.js?v=20260908-45q"></script>
+<script src="pool/pool-ab.js?v=20260908-45q"></script>
+<script src="pool/pool-cd.js?v=20260908-45q"></script>
+<script src="pool/pool-e.js?v=20260908-45q"></script>
+<script src="pool/pool-f.js?v=20260908-45q"></script>
+<script src="pool/pool-extra.js?v=20260908-45q"></script>
+<script src="pool/pool-diagrams.js?v=1"></script>
+<script src="pool/pool-engine.js?v=20260908-45q"></script>
 <script>
 (() => {
   const $=id=>document.getElementById(id);
+  const questionCount=EXAM_BLUEPRINT.totalQuestions;
   const signature=id=>generateExamForStudent(id).map(q=>q.id).sort().join('|');
   const overlap=(a,b)=>{const sa=new Set(generateExamForStudent(a).map(q=>q.id));return generateExamForStudent(b).filter(q=>sa.has(q.id)).length};
   function auditClass(grade,classNo,maxAttendance){
@@ -67,12 +75,12 @@
     const audits=Array.from({length:classes},(_,i)=>auditClass(grade,i+1,maxAttendance));
     $('student-count').textContent=classes*maxAttendance;
     const max=Math.max(...audits.map(a=>a.max));const dup=audits.reduce((s,a)=>s+a.duplicate,0);
-    $('max-adjacent').textContent=`${max} / 35`;$('duplicate-sets').textContent=dup;
-    $('max-adjacent').className=max<=10?'ok':max<=14?'warn':'bad';$('duplicate-sets').className=dup===0?'ok':'bad';
+    $('max-adjacent').textContent=`${max} / ${questionCount}`;$('duplicate-sets').textContent=dup;
+    $('max-adjacent').className=max<=13?'ok':max<=18?'warn':'bad';$('duplicate-sets').className=dup===0?'ok':'bad';
     $('summary').textContent=`${grade}年・${classes}クラス・各${maxAttendance}人で監査しました。隣接番号同士の同一問題数は少ないほど、座席付近での問題重複を抑えられます。`;
     const body=$('class-rows');body.replaceChildren();audits.forEach(a=>{const r=body.insertRow();[`${a.classNo}組`,a.count,a.avg.toFixed(2),a.max,a.min,a.duplicate].forEach(v=>{const c=r.insertCell();c.textContent=v})});
   }
-  function compare(){const a=$('id-a').value.trim(),b=$('id-b').value.trim();const same=overlap(a,b);$('same-count').textContent=`${same} / 35`;$('same-rate').textContent=`${(same/35*100).toFixed(1)}%`;$('same-count').className=same<=10?'ok':same<=14?'warn':'bad';}
+  function compare(){const a=$('id-a').value.trim(),b=$('id-b').value.trim();const same=overlap(a,b);$('same-count').textContent=`${same} / ${questionCount}`;$('same-rate').textContent=`${(same/questionCount*100).toFixed(1)}%`;$('same-count').className=same<=13?'ok':same<=18?'warn':'bad';}
   $('run').onclick=run;$('compare').onclick=compare;run();compare();
 })();
 </script>

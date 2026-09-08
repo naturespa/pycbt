@@ -53,7 +53,7 @@
   }
   function confirmSubmission() {
     const missing = state.questions.filter(q => !normalize(state.answers[q.id])).length;
-    $("unanswered-message").textContent = missing ? `未回答が${missing}問あります。提出後は解答を変更できません。` : "35問すべてに解答済みです。提出後は解答を変更できません。";
+    $("unanswered-message").textContent = missing ? `未回答が${missing}問あります。提出後は解答を変更できません。` : `${state.questions.length}問すべてに解答済みです。提出後は解答を変更できません。`;
     $("confirm-submit").showModal();
   }
   function scoreExam() {
@@ -86,7 +86,7 @@
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
     $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
     $("result-time").textContent = new Date(state.record.session.submitted_at).toLocaleString("ja-JP");
-    $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `正答数　${stats.total.correct} / 35 問`;
+    $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `正答数　${stats.total.correct} / ${stats.total.count} 問`;
     $("result-details").innerHTML = [stats.knowledge, stats.thinking].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
     $("domain-results").innerHTML = stats.domains.map(s => `<div><span>${s.label}</span><strong>${Math.round(s.earned / s.max * 100)}%</strong><small>${formatScore(s.earned, s.max)}</small></div>`).join("");
     $("it-result").innerHTML = `<strong>${stats.it.correct} / ${stats.it.count} 問</strong><span>${Math.round(stats.it.earned / stats.it.max * 100)}%　${formatScore(stats.it.earned, stats.it.max)}</span>`;
@@ -98,7 +98,7 @@
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
-    const errors = validateBlueprint(QUESTION_BANK);
+    const errors = validateBlueprint(generateExamForStudent(student.id));
     if (errors.length) { alert(`問題マスタの検証に失敗しました。\n${errors.join("\n")}`); return; }
     if (getLocal(completedKey(student.id))) { $("student-id-hint").textContent = "この受験番号は、すでに提出済みです。再受験する場合は先生に申し出てください。"; return; }
     const active = getLocal(activeKey(student.id));

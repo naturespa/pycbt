@@ -1,7 +1,9 @@
 (() => {
-  const VERSION = "2026-09-08-pool175";
+  const VERSION = "2026-09-08-pool225";
   const VARIANT_COUNT = 5;
   const slots = window.PYCBT_POOL_SLOTS || [];
+  const FOUR_POINT_SLOTS = new Set(["A05", "C05", "D05", "E05", "F07"]);
+  slots.forEach(slot => { slot.points = FOUR_POINT_SLOTS.has(slot.slot_id) ? 4 : 2; });
 
   function hashSeed(text) {
     let h = 2166136261 >>> 0;
@@ -108,9 +110,9 @@
 
   function validatePool() {
     const errors = [];
-    if (slots.length !== 35) errors.push(`出題スロットが35ではありません（${slots.length}）。`);
+    if (slots.length !== EXAM_BLUEPRINT.totalQuestions) errors.push(`出題スロットが${EXAM_BLUEPRINT.totalQuestions}ではありません（${slots.length}）。`);
     const poolSize = slots.reduce((sum, slot) => sum + slot.variants.length, 0);
-    if (poolSize !== 175) errors.push(`問題プールが175問ではありません（${poolSize}）。`);
+    if (poolSize !== 225) errors.push(`問題プールが225問ではありません（${poolSize}）。`);
     const ids = new Set();
     for (const slot of slots) {
       if (slot.variants.length !== 5) errors.push(`${slot.slot_id} のvariantが5問ではありません。`);
@@ -146,7 +148,7 @@
         student:item.id,
         previous:prev.id,
         sameExactQuestions:same,
-        exactOverlapRate:Math.round(same / 35 * 1000) / 10
+        exactOverlapRate:Math.round(same / EXAM_BLUEPRINT.totalQuestions * 1000) / 10
       };
     });
   }
@@ -157,7 +159,7 @@
     const overlaps = adjacent.map(x => x.sameExactQuestions);
     const signatures = ids.map(id => generateExam(id).map(q => q.id).sort().join("|"));
     return {
-      grade, classNo, students:ids.length, poolSize:175,
+      grade, classNo, students:ids.length, poolSize:225,
       adjacent:{
         average: overlaps.length ? Math.round(overlaps.reduce((a,b)=>a+b,0)/overlaps.length*100)/100 : 0,
         max: overlaps.length ? Math.max(...overlaps) : 0,
@@ -171,7 +173,7 @@
     const classAudits = Array.from({length:classes}, (_,i)=>auditClass(grade,i+1,maxAttendance));
     return {
       version:VERSION,
-      grade, classes, students:classes*maxAttendance, poolSize:175,
+      grade, classes, students:classes*maxAttendance, poolSize:225,
       classAudits,
       maxAdjacentOverlap:Math.max(...classAudits.map(a=>a.adjacent.max)),
       duplicateFullSets:classAudits.reduce((s,a)=>s+a.duplicateFullSets,0),
@@ -182,7 +184,7 @@
   generateExamForStudent = generateExam;
   window.generateExamForStudent = generateExam;
   window.PYCBT_POOL_VERSION = VERSION;
-  window.PYCBT_POOL_SIZE = 175;
+  window.PYCBT_POOL_SIZE = 225;
   window.validateQuestionPool = validatePool;
   window.auditExamSets = auditExamSets;
   window.auditClass = auditClass;
@@ -198,5 +200,5 @@
 
   const errors = validatePool();
   if (errors.length) console.error("CBT問題プール検証エラー", errors);
-  else console.info(`CBT問題プール ${VERSION}: 175問 / 検証OK`);
+  else console.info(`CBT問題プール ${VERSION}: 225問 / 検証OK`);
 })();
