@@ -1,77 +1,12 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
-  // Temporary local operation while tenant consent is pending.
-  const MICROSOFT_AUTH_ENABLED = false;
-  // This endpoint requires a Microsoft Entra access token. The SAS signature
-  // is deliberately not published in the GitHub Pages source.
-  const POWER_AUTOMATE_SUBMIT_URL = "https://default90f43b6c2cf14ccbba35c4ea895ed8.c3.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/11/workflows/583309cc3f8c4037adda534ce7243c37/triggers/manual/paths/invoke?api-version=1";
-  const ENTRA_CONFIG = {
-    auth: {
-      clientId: "c813f1e6-49b1-4db0-beb4-5b03959e11c0",
-      authority: "https://login.microsoftonline.com/90f43b6c-2cf1-4ccb-ba35-c4ea895ed8c3",
-      redirectUri: "https://naturespa.github.io/pycbt/"
-    },
-    cache: { cacheLocation: "sessionStorage" }
-  };
-  const FLOW_SCOPES = ["https://service.flow.microsoft.com//.default"];
-  const state = { student: null, identity: null, flowReady: false, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
-  let msalClient = null;
+  const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
   const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
   const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
-  function setSignedInAccount(account) {
-    if (!account) return;
-    state.identity = { object_id: account.localAccountId, tenant_id: account.tenantId, username: account.username, display_name: account.name || "" };
-    $("signin-status").textContent = `サインイン済み：${account.name || account.username}（提出権限を確認中）`;
-    $("signin-button").textContent = "提出権限を確認する";
-    if (!$("student-name").value.trim() && account.name) $("student-name").value = account.name;
-  }
-  async function initializeAuth() {
-    if (!window.msal) { $("signin-status").textContent = "認証モジュールを読み込めませんでした。通信環境を確認してください。"; return; }
-    try {
-      msalClient = new window.msal.PublicClientApplication(ENTRA_CONFIG);
-      await msalClient.initialize?.();
-      const result = await msalClient.handleRedirectPromise();
-      setSignedInAccount(result?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]);
-      if (result?.accessToken) setFlowReady();
-      else if (state.identity) {
-        try { await getFlowToken(false); setFlowReady(); }
-        catch { $("signin-status").textContent = "学校アカウントでサインインし、提出権限を確認してください。"; }
-      }
-    } catch (error) {
-      $("signin-status").textContent = "Microsoft 365 認証を初期化できませんでした。先生に申し出てください。";
-    }
-  }
-  async function signIn() {
-    if (!msalClient) { $("signin-status").textContent = "認証モジュールの準備中です。少し待ってから再度押してください。"; return; }
-    try {
-      await msalClient.loginRedirect({ scopes: ["openid", "profile", "email", ...FLOW_SCOPES] });
-    } catch (error) { $("signin-status").textContent = "サインインを完了できませんでした。学校アカウントを選択して、もう一度試してください。"; }
-  }
-  function setFlowReady() {
-    state.flowReady = true;
-    $("signin-status").textContent = `認証済み：${state.identity.display_name || state.identity.username}（学校アカウント）`;
-    $("signin-button").textContent = "認証済み";
-    $("signin-button").disabled = true;
-  }
-  async function getFlowToken(interactive = true) {
-    if (!msalClient || !state.identity) throw new Error("not_signed_in");
-    const account = msalClient.getActiveAccount() || msalClient.getAllAccounts().find(a => a.localAccountId === state.identity.object_id);
-    try { return (await msalClient.acquireTokenSilent({ account, scopes: FLOW_SCOPES })).accessToken; }
-    catch (error) { if (!interactive) throw error; return (await msalClient.acquireTokenPopup({ account, scopes: FLOW_SCOPES })).accessToken; }
-  }
-  async function submitToLedger(payload) {
-    const accessToken = await getFlowToken();
-    const response = await fetch(POWER_AUTOMATE_SUBMIT_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) { const error = new Error("ledger_submit_failed"); error.status = response.status; throw error; }
-  }
   function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v)) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
   function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
@@ -135,7 +70,6 @@
       schema_version: 1,
       assessment: { title: "情報I CBT", blueprint: EXAM_BLUEPRINT, question_bank_capacity: QUESTION_BANK_CAPACITY },
       student: { id: state.student.id, grade: state.student.grade, class: state.student.classNo, attendance: state.student.attendance, name: state.student.name },
-      authenticated_user: state.identity,
       session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
       scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
       questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
@@ -145,11 +79,7 @@
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
-    try {
-      if (MICROSOFT_AUTH_ENABLED) await submitToLedger({ student: state.student, result: state.record });
-      else setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
-    }
-    catch (error) { state.submitted = false; alert(error.status === 409 ? "この受験番号は、すでに提出済みです。" : "提出を保存できませんでした。通信を確認して、もう一度提出してください。"); return; }
+    setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
     $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
@@ -164,7 +94,6 @@
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
-    if (MICROSOFT_AUTH_ENABLED && (!state.identity || !state.flowReady)) { $("student-id-hint").textContent = "受験を開始する前に、学校の Microsoft 365 アカウントでサインインし、提出権限を確認してください。"; return; }
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
     const errors = validateBlueprint(QUESTION_BANK);
@@ -196,8 +125,4 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  if (MICROSOFT_AUTH_ENABLED) {
-    $("signin-button").onclick = signIn;
-    initializeAuth();
-  }
 })();
