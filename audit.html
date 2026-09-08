@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>情報I CBT 問題セット監査</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .audit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}.audit-card{padding:16px;border:1px solid #d9e0e7;border-radius:12px;background:#fff}.audit-card span{display:block;color:#5f6b76;font-size:.9rem}.audit-card strong{display:block;font-size:1.8rem;margin-top:4px}.audit-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.audit-controls label{min-width:140px}.ok{color:#16794a}.warn{color:#a15c00}.bad{color:#b42318}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.table-wrap{overflow:auto}.small-note{font-size:.9rem;color:#5f6b76}
+  </style>
+</head>
+<body>
+<main class="app-shell admin-shell">
+  <header class="exam-header"><div><span class="header-title">情報I CBT</span><strong>問題セット監査</strong></div><a href="admin.html">管理画面へ</a></header>
+  <section class="card">
+    <h1>280人シミュレーション</h1>
+    <p>受験番号から生成される問題セットを事前に確認します。同じ受験番号は常に同じセットになります。</p>
+    <div class="audit-controls">
+      <label>学年<select id="grade"><option value="1">1年</option><option value="2">2年</option><option value="3">3年</option></select></label>
+      <label>クラス数<input id="classes" type="number" min="1" max="9" value="7" /></label>
+      <label>1クラス最大人数<input id="attendance" type="number" min="1" max="99" value="40" /></label>
+      <button id="run" class="primary" type="button">監査を実行</button>
+    </div>
+    <div class="audit-grid">
+      <div class="audit-card"><span>想定受験者</span><strong id="student-count">280</strong></div>
+      <div class="audit-card"><span>1人あたり</span><strong>35問</strong></div>
+      <div class="audit-card"><span>隣接番号 最大同一問題</span><strong id="max-adjacent">—</strong></div>
+      <div class="audit-card"><span>完全一致セット</span><strong id="duplicate-sets">—</strong></div>
+    </div>
+    <p id="summary" class="small-note"></p>
+  </section>
+
+  <section class="card">
+    <h2>1221・1222などの比較</h2>
+    <div class="audit-controls">
+      <label>受験番号1<input id="id-a" value="1221" maxlength="4" /></label>
+      <label>受験番号2<input id="id-b" value="1222" maxlength="4" /></label>
+      <button id="compare" class="secondary" type="button">比較</button>
+    </div>
+    <div class="audit-grid">
+      <div class="audit-card"><span>同一問題ID</span><strong id="same-count">—</strong></div>
+      <div class="audit-card"><span>同一率</span><strong id="same-rate">—</strong></div>
+      <div class="audit-card"><span>同じ出題枠</span><strong>35 / 35</strong></div>
+    </div>
+    <p id="compare-note" class="small-note">同じ出題枠でも、variantや数値・選択肢順が異なる場合があります。</p>
+  </section>
+
+  <section class="card">
+    <h2>クラス別結果</h2>
+    <div class="table-wrap"><table><thead><tr><th>クラス</th><th>人数</th><th>隣接平均</th><th>隣接最大</th><th>隣接最小</th><th>完全一致セット</th></tr></thead><tbody id="class-rows"></tbody></table></div>
+  </section>
+</main>
+<script src="question-bank.js?v=20260908-audit"></script>
+<script>
+(() => {
+  const $=id=>document.getElementById(id);
+  const signature=id=>generateExamForStudent(id).map(q=>q.id).sort().join('|');
+  const overlap=(a,b)=>{const sa=new Set(generateExamForStudent(a).map(q=>q.id));return generateExamForStudent(b).filter(q=>sa.has(q.id)).length};
+  function auditClass(grade,classNo,maxAttendance){
+    const ids=Array.from({length:maxAttendance},(_,i)=>`${grade}${classNo}${String(i+1).padStart(2,'0')}`);
+    const adjacent=[];for(let i=1;i<ids.length;i++) adjacent.push(overlap(ids[i-1],ids[i]));
+    const sigs=ids.map(signature);const duplicate=sigs.length-new Set(sigs).size;
+    return {classNo,count:ids.length,avg:adjacent.length?adjacent.reduce((a,b)=>a+b,0)/adjacent.length:0,max:adjacent.length?Math.max(...adjacent):0,min:adjacent.length?Math.min(...adjacent):0,duplicate};
+  }
+  function run(){
+    const grade=Number($('grade').value),classes=Number($('classes').value),maxAttendance=Number($('attendance').value);
+    const audits=Array.from({length:classes},(_,i)=>auditClass(grade,i+1,maxAttendance));
+    $('student-count').textContent=classes*maxAttendance;
+    const max=Math.max(...audits.map(a=>a.max));const dup=audits.reduce((s,a)=>s+a.duplicate,0);
+    $('max-adjacent').textContent=`${max} / 35`;$('duplicate-sets').textContent=dup;
+    $('max-adjacent').className=max<=10?'ok':max<=14?'warn':'bad';$('duplicate-sets').className=dup===0?'ok':'bad';
+    $('summary').textContent=`${grade}年・${classes}クラス・各${maxAttendance}人で監査しました。隣接番号同士の同一問題数は少ないほど、座席付近での問題重複を抑えられます。`;
+    const body=$('class-rows');body.replaceChildren();audits.forEach(a=>{const r=body.insertRow();[`${a.classNo}組`,a.count,a.avg.toFixed(2),a.max,a.min,a.duplicate].forEach(v=>{const c=r.insertCell();c.textContent=v})});
+  }
+  function compare(){const a=$('id-a').value.trim(),b=$('id-b').value.trim();const same=overlap(a,b);$('same-count').textContent=`${same} / 35`;$('same-rate').textContent=`${(same/35*100).toFixed(1)}%`;$('same-count').className=same<=10?'ok':same<=14?'warn':'bad';}
+  $('run').onclick=run;$('compare').onclick=compare;run();compare();
+})();
+</script>
+</body>
+</html>
