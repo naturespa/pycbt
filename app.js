@@ -7,6 +7,7 @@
   const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
   const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[character]));
   function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v)) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
   function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
@@ -19,9 +20,9 @@
     $("exam-notice").textContent = state.current === state.questions.length - 1 ? "最後の問題です。問題番号を押すと任意の問題へ移動できます。" : "";
     const q = state.questions[state.current]; const answer = state.answers[q.id] ?? "";
     $("progress-label").textContent = `第 ${state.current + 1} 問 / ${state.questions.length} 問`;
-    const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${q.visual_type}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
-    const input = q.format === "choice" ? `<div class="answer-area">${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${choice}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65 + i)}. ${choice}</span></label>`).join("")}</div>` : `<div class="answer-area"><label>解答<input class="answer-input" id="answer-input" value="${answer}" autocomplete="off" /></label></div>`;
-    $("question-card").innerHTML = `<p class="question-meta">${q.id}　${DOMAIN_NAMES[q.domain]}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}</p><div class="question-body"><h2>${q.question}</h2>${visual}${input}</div>`;
+    const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${escapeHtml(q.visual_type)}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
+    const input = q.format === "choice" ? `<div class="answer-area">${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${escapeHtml(choice)}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65 + i)}. ${escapeHtml(choice)}</span></label>`).join("")}</div>` : `<div class="answer-area"><label>解答<input class="answer-input" id="answer-input" value="${escapeHtml(answer)}" autocomplete="off" /></label></div>`;
+    $("question-card").innerHTML = `<p class="question-meta">${escapeHtml(q.id)}　${escapeHtml(DOMAIN_NAMES[q.domain])}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}</p><div class="question-body"><h2>${escapeHtml(q.question)}</h2>${visual}${input}</div>`;
     document.querySelectorAll('input[name="answer"]').forEach(el => el.addEventListener("change", () => { state.answers[q.id] = el.value; persistActive(); renderNav(); }));
     $("answer-input")?.addEventListener("input", event => { state.answers[q.id] = event.target.value; persistActive(); renderNav(); });
     $("previous-button").disabled = state.current === 0;

@@ -123,6 +123,7 @@
         if (!v.question || v.answer === undefined) errors.push(`${id} の問題文または正答がありません。`);
         if (slot.format === "choice") {
           if (!Array.isArray(v.choices) || v.choices.length !== 4) errors.push(`${id} の選択肢が4つではありません。`);
+          if (Array.isArray(v.choices) && new Set(v.choices.map(String)).size !== 4) errors.push(`${id} の選択肢に重複があります。`);
           if (!v.choices?.map(String).includes(String(v.answer))) errors.push(`${id} の正答が選択肢にありません。`);
         }
         if (slot.visual_type !== "none" && !v.visual) errors.push(`${id} に図表データがありません。`);
