@@ -15,6 +15,8 @@
     setLocal(activeKey(state.student.id), { schema_version: 1, student: state.student, answers: state.answers, current: state.current, started_at: state.startedAt, ends_at: state.endsAt, question_ids: state.questions.map(q => q.id) });
   }
   function renderQuestion() {
+    $("exam-notice").hidden = state.current !== state.questions.length - 1;
+    $("exam-notice").textContent = state.current === state.questions.length - 1 ? "最後の問題です。問題番号を押すと任意の問題へ移動できます。" : "";
     const q = state.questions[state.current]; const answer = state.answers[q.id] ?? "";
     $("progress-label").textContent = `第 ${state.current + 1} 問 / ${state.questions.length} 問`;
     const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${q.visual_type}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
