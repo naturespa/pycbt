@@ -33,6 +33,7 @@ input { display: block; border: 1px solid #9babB5; border-radius: 8px; padding: 
 #exam-screen .question-card h2 { margin: 0 0 12px; font-size: 1.12rem; line-height: 1.6; overflow-wrap: anywhere; }
 #exam-screen .visual { white-space: normal; padding: 8px; margin: 0 0 12px; }
 #exam-screen .visual svg { max-height: 250px; }
+#exam-screen .visual .flowchart-diagram { max-height: 330px; }
 #exam-screen .answer-area { display: grid; gap: 8px; }
 #exam-screen .choice { margin: 0; padding: 10px 12px; min-height: 44px; line-height: 1.5; overflow-wrap: anywhere; }
 #exam-screen .choice input { flex: 0 0 auto; }

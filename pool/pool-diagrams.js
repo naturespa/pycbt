@@ -4,13 +4,21 @@
   const text = (x,y,s) => `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${esc(s)}</text>`;
   const box = (x,y,w,h,s,round=0) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${round}"/>${text(x+w/2,y+h/2,s)}`;
   const arrow = (x,y,X,Y) => `<path d="M${x},${y} L${X},${Y}" fill="none" marker-end="url(#diagram-arrow)"/>`;
-  const svg = (label,body,h=210) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 ${h}" role="img" aria-label="${esc(label)}" style="display:block;width:100%;max-width:640px;margin:auto;font:16px sans-serif"><title>${esc(label)}</title><defs><marker id="diagram-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#29485f"/></marker></defs><g stroke="#29485f" stroke-width="2" fill="#edf5fa">${body}</g><style>text{fill:#142d40;stroke:none}text{font-weight:500}</style></svg>`;
+  const svg = (label,body,h=210,className="") => `<svg class="${esc(className)}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 ${h}" role="img" aria-label="${esc(label)}" style="display:block;width:100%;max-width:640px;margin:auto;font:16px sans-serif"><title>${esc(label)}</title><defs><marker id="diagram-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#29485f"/></marker></defs><g stroke="#29485f" stroke-width="2" fill="#edf5fa">${body}</g><style>text{fill:#142d40;stroke:none}text{font-weight:500}</style></svg>`;
   const row = (values,y=70,highlight=[]) => values.map((v,i)=>`<g>${highlight.includes(i)?`<rect x="${60+i*72}" y="${y}" width="64" height="44" fill="#ffe5a3"/>`:''}${box(60+i*72,y,64,44,v)}${text(92+i*72,y-15,i)}</g>`).join('');
   const array = values => svg(`配列。添字は0から。値は${values.join('、')}`,text(310,22,'添字と要素')+row(values));
   const flow = (kind) => {
-    if(kind===2) return svg('条件による分岐。真なら処理A、偽なら処理B。',`<polygon points="250,25 350,70 250,115 150,70"/>${text(250,70,'条件？')}${arrow(350,70,430,70)}${text(390,48,'真')}${box(430,45,140,50,'処理A')}${arrow(250,115,250,160)}${text(275,138,'偽')}${box(180,160,140,45,'処理B')}`,230);
-    const middle=kind===3?`<polygon points="235,75 395,75 375,130 215,130"/>${text(305,102,'値を入力')}`:box(220,75,170,55,kind===1?'x ← x + 1':'処理1');
-    return svg('フローチャート。開始から処理を経て終了へ進む。',box(20,80,125,45,'開始',23)+arrow(145,102,215,102)+middle+arrow(395,102,470,102)+box(475,80,140,45,kind===4?'処理2':'終了',kind===4?0:23));
+    const start=box(250,12,140,44,'開始',22);
+    if(kind===2) {
+      const decision=`<polygon points="320,88 410,133 320,178 230,133"/>${text(320,133,'条件？')}`;
+      const branches=`<path d="M230,133 H135 V210" fill="none" marker-end="url(#diagram-arrow)"/><path d="M410,133 H505 V210" fill="none" marker-end="url(#diagram-arrow)"/>${text(185,112,'偽')}${text(455,112,'真')}${box(65,210,140,48,'処理B')}${box(435,210,140,48,'処理A')}<path d="M135,258 V292 H320" fill="none"/><path d="M505,258 V292 H320" fill="none"/>${arrow(320,292,320,326)}`;
+      return svg('開始から条件を判断し、真と偽の処理に分岐した後、終了へ進むフローチャート。',start+arrow(320,56,320,86)+decision+branches+box(250,328,140,44,'終了',22),390,'flowchart-diagram');
+    }
+    const first=kind===3?`<polygon points="235,105 405,105 385,159 215,159"/>${text(310,132,'値を入力')}`:box(235,105,170,54,kind===1?'x ← x + 1':'処理1');
+    let body=start+arrow(320,56,320,103)+first;
+    if(kind===4) body+=arrow(320,159,320,205)+box(235,207,170,54,'処理2')+arrow(320,261,320,305)+box(250,307,140,44,'終了',22);
+    else body+=arrow(320,159,320,215)+box(250,217,140,44,'終了',22);
+    return svg('開始から処理を経て終了へ、上から下に進むフローチャート。',body,kind===4?365:275,'flowchart-diagram');
   };
   const state = (i) => {
     if(i===2) return svg('待機、動作、停止の順に状態が変わる。',box(25,80,140,55,'待機',15)+arrow(165,107,245,107)+box(245,80,140,55,'動作',15)+arrow(385,107,465,107)+box(465,80,140,55,'停止',15));
