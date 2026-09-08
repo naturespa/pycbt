@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>情報I CBT</title>
-    <link rel="stylesheet" href="styles.css?v=20260908-layout2" />
+    <link rel="stylesheet" href="styles.css?v=20260908-result1" />
   </head>
   <body>
     <main class="app-shell">
@@ -45,10 +45,17 @@
       <section id="result-screen" class="result-screen" hidden>
         <header class="result-header"><div><span class="result-mark">I</span><strong>情報I CBT試験</strong></div><p>試験終了　<span id="result-time"></span></p></header>
         <div class="result-body">
-          <p class="result-lead">あなたの試験結果は以下のとおりです。</p>
-          <p id="result-student" class="result-student"></p>
-          <p>結果はこの端末に保存しました。学校への自動送信は行っていません。</p>
-          <button id="download-result" class="primary" type="button">結果JSONをダウンロード</button>
+          <div class="result-intro">
+            <div class="result-intro-text">
+              <p class="result-lead">あなたの試験結果は以下のとおりです。</p>
+              <p id="result-student" class="result-student"></p>
+              <p class="result-storage">結果はこの端末に保存しました。学校への自動送信は行っていません。</p>
+            </div>
+            <div class="result-download-area">
+              <button id="download-result" class="primary" type="button">結果JSONをダウンロード</button>
+              <p>提出方法については、授業内で確認すること。</p>
+            </div>
+          </div>
           <div class="result-columns">
             <div>
               <section class="result-panel total-panel"><h2>総合評価点</h2><strong id="total-score"></strong><span id="correct-count"></span></section>
