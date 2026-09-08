@@ -20,7 +20,7 @@
 
 `id`, `domain`, `viewpoint`, `format`, `points`, `difficulty`, `source`, `source_ref`, `it_passport`, `render_type`, `visual_type`, `variant_group`, `variant_id`, `skill`, `question`, `choices`, `answer`, `acceptable_answers`, `explanation`, `advice_tag`
 
-`render_type` は `fixed` / `parameter` / `visual`、`variant_group` は数値や条件を変える同系統問題の識別子、`variant_id` は実際に出題した監査済みバリエーション、`visual_type` は `none` / `flowchart` / `state` / `table` / `sort_trace` などの図表種別です。現在は45出題枠に各5問、合計225問を登録しています。開始時に `validateBlueprint` が45問・100点・知識技能40点・思考判断表現60点・形式数・ITパスポート関連数・図表数を検査します。
+`render_type` は `fixed` / `parameter` / `visual`、`variant_group` は数値や条件を変える同系統問題の識別子、`variant_id` は実際に出題した監査済みバリエーション、`visual_type` は `none` / `flowchart` / `state` / `table` / `sort_trace` などの図表種別です。現在は45出題枠のうち、Python体験編 Chap.1〜15の15枠に各6問、残る30枠に各5問、合計240問を登録しています。毎回の試験にChap.1〜15から各1問を必ず含めます。開始時に `validateBlueprint` が45問・100点・知識技能40点・思考判断表現60点・形式数・ITパスポート関連数・図表数を検査します。
 
 ## 受験制御の範囲
 
@@ -40,4 +40,4 @@ GitHub Pages版はサーバーを持たないため、同一ブラウザ内で�
 
 再受験を許可する場合は、教員が対象端末でブラウザの鍵アイコンから「サイトの設定」を開き、このサイトの保存データを削除してからページを再読み込みします。保存中のほかの受験情報も消えるため、同一端末で複数人の受験中データがないことを確認して実施してください。
 
-現在の問題プールは、A〜Fの45出題枠ごとに5種類の問題を持ち、受験番号に応じて合計45問を再現可能な形で生成します。
+現在の問題プールは、A〜Fの45出題枠に合計240問を持ち、受験番号に応じて合計45問を再現可能な形で生成します。Python体験編 Chap.1〜15は毎回各1問ずつ出題されます。

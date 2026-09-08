@@ -4,7 +4,7 @@
  * これにより、同じ受験番号では常に同じ問題セットを再現し、隣接番号では
  * variant・選択肢順・問題順が変わる。将来は各スロットの実問題variantsを追加可能。
  */
-const QUESTION_BANK_CAPACITY = 225;
+const QUESTION_BANK_CAPACITY = 240;
 const EXAM_BLUEPRINT = {
   totalQuestions: 45, totalPoints: 100, durationSeconds: 40 * 60,
   domains: { A: 6, B: 4, C: 8, D: 9, E: 8, F: 10 },

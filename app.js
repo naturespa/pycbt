@@ -22,7 +22,7 @@
     $("progress-label").textContent = `第 ${state.current + 1} 問 / ${state.questions.length} 問`;
     const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${escapeHtml(q.visual_type)}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
     const input = q.format === "choice" ? `<div class="answer-area">${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${escapeHtml(choice)}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65 + i)}. ${escapeHtml(choice)}</span></label>`).join("")}</div>` : `<div class="answer-area"><label>解答<input class="answer-input" id="answer-input" value="${escapeHtml(answer)}" autocomplete="off" /></label></div>`;
-    $("question-card").innerHTML = `<p class="question-meta">${escapeHtml(q.id)}　${escapeHtml(DOMAIN_NAMES[q.domain])}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}</p><div class="question-body"><h2>${escapeHtml(q.question)}</h2>${visual}${input}</div>`;
+    $("question-card").innerHTML = `<p class="question-meta">${escapeHtml(q.id)}　${escapeHtml(DOMAIN_NAMES[q.domain])}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}${q.paiza_chapter ? `　Python体験編 Chap.${q.paiza_chapter}` : ""}</p><div class="question-body"><h2>${escapeHtml(q.question)}</h2>${visual}${input}</div>`;
     document.querySelectorAll('input[name="answer"]').forEach(el => el.addEventListener("change", () => { state.answers[q.id] = el.value; persistActive(); renderNav(); }));
     $("answer-input")?.addEventListener("input", event => { state.answers[q.id] = event.target.value; persistActive(); renderNav(); });
     $("previous-button").disabled = state.current === 0;
@@ -75,7 +75,7 @@
       student: { id: state.student.id, grade: state.student.grade, class: state.student.classNo, attendance: state.student.attendance, name: state.student.name },
       session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
       scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
-      questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
+      questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, skill: q.skill, paiza_chapter: q.paiza_chapter, curriculum_ref: q.curriculum_ref, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
     };
   }
   async function submit(auto = false) {

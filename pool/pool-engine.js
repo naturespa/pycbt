@@ -1,6 +1,6 @@
 (() => {
-  const VERSION = "2026-09-08-pool225";
-  const VARIANT_COUNT = 5;
+  const VERSION = "2026-09-08-pool240";
+  const EXPECTED_POOL_SIZE = 240;
   const slots = window.PYCBT_POOL_SLOTS || [];
   const FOUR_POINT_SLOTS = new Set(["A05", "C05", "D05", "E05", "F07"]);
   slots.forEach(slot => { slot.points = FOUR_POINT_SLOTS.has(slot.slot_id) ? 4 : 2; });
@@ -46,13 +46,13 @@
     };
   }
 
-  function variantSequence(classKey, slotId, length) {
+  function variantSequence(classKey, slotId, length, variantCount) {
     const rng = seededRandom(hashSeed(`${VERSION}:${classKey}:${slotId}:variant-sequence`));
     const sequence = [];
-    const counts = [0, 0, 0, 0, 0];
+    const counts = Array(variantCount).fill(0);
     for (let i = 0; i < length; i += 1) {
       const banned = new Set(sequence.slice(-2));
-      const candidates = [0, 1, 2, 3, 4].filter(v => !banned.has(v));
+      const candidates = Array.from({ length: variantCount }, (_, v) => v).filter(v => !banned.has(v));
       const minCount = Math.min(...candidates.map(v => counts[v]));
       const balanced = candidates.filter(v => counts[v] === minCount);
       const selected = balanced[Math.floor(rng() * balanced.length)];
@@ -62,10 +62,12 @@
     return sequence;
   }
 
-  function chooseVariantIndex(studentId, slotId) {
+  function chooseVariantIndex(studentId, slot) {
+    const slotId = slot.slot_id;
+    const variantCount = slot.variants.length;
     const parsed = parseStudentCode(studentId);
-    if (!parsed || parsed.attendance < 1) return hashSeed(`${VERSION}:${studentId}:${slotId}`) % VARIANT_COUNT;
-    return variantSequence(parsed.classKey, slotId, parsed.attendance)[parsed.attendance - 1];
+    if (!parsed || parsed.attendance < 1) return hashSeed(`${VERSION}:${studentId}:${slotId}`) % variantCount;
+    return variantSequence(parsed.classKey, slotId, parsed.attendance, variantCount)[parsed.attendance - 1];
   }
 
   function buildQuestion(slot, variantIndex, studentId) {
@@ -80,14 +82,16 @@
       format: slot.format,
       points: slot.points,
       difficulty: slot.viewpoint === "knowledge" ? "basic" : "standard",
-      source: slot.it_passport ? "itp_similar" : "textbook_original",
-      source_ref: slot.it_passport ? "ITパスポート出題領域に準拠した類似問題" : "情報I CBT オリジナル",
+      source: slot.paiza_chapter ? "paiza_aligned_original" : slot.it_passport ? "itp_similar" : "textbook_original",
+      source_ref: slot.curriculum_ref || (slot.it_passport ? "ITパスポート出題領域に準拠した類似問題" : "情報I CBT オリジナル"),
       it_passport: slot.it_passport,
       render_type: "pool",
       visual_type: slot.visual_type,
       variant_group: slot.slot_id,
       variant_id: `v${variantIndex + 1}`,
       skill: slot.skill,
+      paiza_chapter: slot.paiza_chapter || null,
+      curriculum_ref: slot.curriculum_ref || null,
       question: variant.question,
       answer: String(variant.answer),
       acceptable_answers: acceptable.map(String),
@@ -104,7 +108,7 @@
 
   function generateExam(studentId) {
     const id = String(studentId || "").trim();
-    const questions = slots.map(slot => buildQuestion(slot, chooseVariantIndex(id, slot.slot_id), id));
+    const questions = slots.map(slot => buildQuestion(slot, chooseVariantIndex(id, slot), id));
     return shuffled(questions, seededRandom(hashSeed(`${VERSION}:${id}:question-order`)));
   }
 
@@ -112,10 +116,14 @@
     const errors = [];
     if (slots.length !== EXAM_BLUEPRINT.totalQuestions) errors.push(`出題スロットが${EXAM_BLUEPRINT.totalQuestions}ではありません（${slots.length}）。`);
     const poolSize = slots.reduce((sum, slot) => sum + slot.variants.length, 0);
-    if (poolSize !== 225) errors.push(`問題プールが225問ではありません（${poolSize}）。`);
+    if (poolSize !== EXPECTED_POOL_SIZE) errors.push(`問題プールが${EXPECTED_POOL_SIZE}問ではありません（${poolSize}）。`);
+    const chapterNumbers = slots.filter(slot => slot.paiza_chapter).map(slot => slot.paiza_chapter).sort((a, b) => a - b);
+    const expectedChapters = Array.from({ length: 15 }, (_, i) => i + 1);
+    if (JSON.stringify(chapterNumbers) !== JSON.stringify(expectedChapters)) errors.push("Python体験編 Chap.1〜15の対応スロットが揃っていません。");
     const ids = new Set();
     for (const slot of slots) {
-      if (slot.variants.length !== 5) errors.push(`${slot.slot_id} のvariantが5問ではありません。`);
+      const expectedVariants = slot.paiza_chapter ? 6 : 5;
+      if (slot.variants.length !== expectedVariants) errors.push(`${slot.slot_id} のvariantが${expectedVariants}問ではありません。`);
       slot.variants.forEach((v, i) => {
         const id = `${slot.slot_id}-${i + 1}`;
         if (ids.has(id)) errors.push(`${id} が重複しています。`);
@@ -160,7 +168,7 @@
     const overlaps = adjacent.map(x => x.sameExactQuestions);
     const signatures = ids.map(id => generateExam(id).map(q => q.id).sort().join("|"));
     return {
-      grade, classNo, students:ids.length, poolSize:225,
+      grade, classNo, students:ids.length, poolSize:window.PYCBT_POOL_SIZE,
       adjacent:{
         average: overlaps.length ? Math.round(overlaps.reduce((a,b)=>a+b,0)/overlaps.length*100)/100 : 0,
         max: overlaps.length ? Math.max(...overlaps) : 0,
@@ -174,7 +182,7 @@
     const classAudits = Array.from({length:classes}, (_,i)=>auditClass(grade,i+1,maxAttendance));
     return {
       version:VERSION,
-      grade, classes, students:classes*maxAttendance, poolSize:225,
+      grade, classes, students:classes*maxAttendance, poolSize:window.PYCBT_POOL_SIZE,
       classAudits,
       maxAdjacentOverlap:Math.max(...classAudits.map(a=>a.adjacent.max)),
       duplicateFullSets:classAudits.reduce((s,a)=>s+a.duplicateFullSets,0),
@@ -185,7 +193,7 @@
   generateExamForStudent = generateExam;
   window.generateExamForStudent = generateExam;
   window.PYCBT_POOL_VERSION = VERSION;
-  window.PYCBT_POOL_SIZE = 225;
+  window.PYCBT_POOL_SIZE = slots.reduce((sum, slot) => sum + slot.variants.length, 0);
   window.validateQuestionPool = validatePool;
   window.auditExamSets = auditExamSets;
   window.auditClass = auditClass;
@@ -201,5 +209,5 @@
 
   const errors = validatePool();
   if (errors.length) console.error("CBT問題プール検証エラー", errors);
-  else console.info(`CBT問題プール ${VERSION}: 225問 / 検証OK`);
+  else console.info(`CBT問題プール ${VERSION}: ${window.PYCBT_POOL_SIZE}問 / 検証OK`);
 })();
