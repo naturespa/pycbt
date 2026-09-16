@@ -22,8 +22,8 @@
   };
   const state = (i) => {
     if(i===2) return svg('待機、動作、停止の順に状態が変わる。',box(25,80,140,55,'待機',15)+arrow(165,107,245,107)+box(245,80,140,55,'動作',15)+arrow(385,107,465,107)+box(465,80,140,55,'停止',15));
-    const login=i===4;
-    let body=box(25,80,170,55,login?'未ログイン':'待機',15)+arrow(195,107,435,107)+text(315,80,login?'認証成功':'ボタン押下')+box(435,80,180,55,login?'ログイン済み':'動作',15);
+    const machineStart=i===4;
+    let body=box(25,80,170,55,machineStart?'停止':'待機',15)+arrow(195,107,435,107)+text(315,80,machineStart?'開始ボタン':'ボタン押下')+box(435,80,180,55,machineStart?'運転中':'動作',15);
     if(i===3) body+=`<path d="M525,135 V180 H110 V138" fill="none" marker-end="url(#diagram-arrow)"/>${text(315,166,'タイマー終了')}`;
     return svg('状態と遷移条件を示す図',body);
   };
