@@ -31,6 +31,9 @@ input { display: block; border: 1px solid #9babB5; border-radius: 8px; padding: 
 #exam-screen .question-meta { margin: 0 0 10px; font-size: .82rem; line-height: 1.5; }
 #exam-screen .question-body { flex: 1; overflow: visible; padding: 0; min-width: 0; }
 #exam-screen .question-card h2 { margin: 0 0 16px; max-width: 42em; font-size: 1.12rem; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; }
+.source-attribution { margin: -6px 0 14px; color: #5d6972; font-size: .82rem; line-height: 1.5; }
+.source-attribution a { color: #42616f; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.official-support-diagram { display: block; width: 100%; max-width: 640px; margin: auto; }
 .question-code { margin: 0 0 18px; padding: 14px 18px; border-left: 4px solid #086c73; background: #f3f6f8; overflow-x: auto; font: 1rem/1.8 Consolas, monospace; tab-size: 4; }
 button:focus-visible, a:focus-visible { outline: 3px solid #086c73; outline-offset: 3px; }
 #question-heading:focus { outline: none; }

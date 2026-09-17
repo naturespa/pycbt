@@ -74,6 +74,17 @@
     const variant = slot.variants[variantIndex];
     const id = `${slot.slot_id}-${variantIndex + 1}`;
     const acceptable = variant.acceptable_answers?.length ? variant.acceptable_answers : [variant.answer];
+    const itPassport = variant.it_passport ?? slot.it_passport;
+    const sourceType = variant.source_type || slot.source_type || (slot.paiza_chapter ? "original" : itPassport ? "it_passport_similar" : "original");
+    const isActualItPassport = sourceType === "it_passport_actual";
+    const sourceYear = variant.source_year || slot.source_year || null;
+    const sourcePeriod = variant.source_period || slot.source_period || null;
+    const sourceQuestionNo = variant.source_question_no || slot.source_question_no || null;
+    const sourceLabel = variant.source_label || slot.source_label || (isActualItPassport && sourceYear && sourcePeriod && sourceQuestionNo
+      ? `ITパスポート試験 ${sourceYear} ${sourcePeriod}／第${sourceQuestionNo}問（IPA）`
+      : null);
+    const sourceUrl = variant.source_url || slot.source_url || null;
+    const sourceAnswerUrl = variant.source_answer_url || slot.source_answer_url || null;
     const q = {
       id,
       base_question_id: slot.slot_id,
@@ -82,14 +93,23 @@
       format: slot.format,
       points: slot.points,
       difficulty: slot.viewpoint === "knowledge" ? "basic" : "standard",
-      source: slot.paiza_chapter ? "paiza_aligned_original" : slot.it_passport ? "itp_similar" : "textbook_original",
-      source_ref: slot.curriculum_ref || (slot.it_passport ? "ITパスポート出題領域に準拠した類似問題" : "情報I CBT オリジナル"),
-      it_passport: slot.it_passport,
+      source: isActualItPassport ? "ipa_official_past_exam" : slot.paiza_chapter ? "paiza_aligned_original" : itPassport ? "itp_similar" : "textbook_original",
+      source_ref: isActualItPassport ? sourceLabel : slot.curriculum_ref || (itPassport ? "ITパスポート出題領域に準拠した類似問題" : "情報I CBT オリジナル"),
+      source_type: sourceType,
+      source_year: sourceYear,
+      source_period: sourcePeriod,
+      source_question_no: sourceQuestionNo,
+      source_label: sourceLabel,
+      source_url: sourceUrl,
+      source_answer_url: sourceAnswerUrl,
+      source_modified: isActualItPassport ? Boolean(variant.source_modified ?? slot.source_modified ?? false) : null,
+      source_supplemental_visual: isActualItPassport ? Boolean(variant.source_supplemental_visual ?? slot.source_supplemental_visual ?? false) : null,
+      it_passport: itPassport,
       render_type: "pool",
-      visual_type: slot.visual_type,
+      visual_type: variant.visual_type || slot.visual_type,
       variant_group: slot.slot_id,
       variant_id: `v${variantIndex + 1}`,
-      skill: slot.skill,
+      skill: variant.skill || slot.skill,
       paiza_chapter: slot.paiza_chapter || null,
       curriculum_ref: slot.curriculum_ref || null,
       question: variant.question,
@@ -129,12 +149,31 @@
         if (ids.has(id)) errors.push(`${id} が重複しています。`);
         ids.add(id);
         if (!v.question || v.answer === undefined) errors.push(`${id} の問題文または正答がありません。`);
+        const sourceType = v.source_type || slot.source_type || (slot.paiza_chapter ? "original" : slot.it_passport ? "it_passport_similar" : "original");
+        if (!["it_passport_actual", "it_passport_similar", "original"].includes(sourceType)) errors.push(`${id} のsource_typeが不正です。`);
+        if (sourceType === "it_passport_actual") {
+          const required = ["source_year", "source_period", "source_question_no", "source_label", "source_url", "source_answer_url"];
+          for (const key of required) {
+            if (!(v[key] || slot[key])) errors.push(`${id} は実問題ですが ${key} がありません。`);
+          }
+          const sourceUrl = v.source_url || slot.source_url || "";
+          if (!/^https:\/\/(?:www3\.jitec|www)\.ipa\.go\.jp\//.test(sourceUrl)) errors.push(`${id} のsource_urlがIPA公式URLではありません。`);
+          const sourceAnswerUrl = v.source_answer_url || slot.source_answer_url || "";
+          if (!/^https:\/\/(?:www3\.jitec|www)\.ipa\.go\.jp\//.test(sourceAnswerUrl)) errors.push(`${id} のsource_answer_urlがIPA公式URLではありません。`);
+          if ((v.source_modified ?? slot.source_modified) !== false) errors.push(`${id} は原文改変なしの実問題として登録されていません。`);
+        } else {
+          const forbidden = ["source_year", "source_period", "source_question_no", "source_label", "source_url", "source_answer_url"];
+          for (const key of forbidden) {
+            if (v[key] || slot[key]) errors.push(`${id} は実問題ではないため ${key} を設定しないでください。`);
+          }
+        }
         if (slot.format === "choice") {
           if (!Array.isArray(v.choices) || v.choices.length !== 4) errors.push(`${id} の選択肢が4つではありません。`);
           if (Array.isArray(v.choices) && new Set(v.choices.map(String)).size !== 4) errors.push(`${id} の選択肢に重複があります。`);
           if (!v.choices?.map(String).includes(String(v.answer))) errors.push(`${id} の正答が選択肢にありません。`);
         }
-        if (slot.visual_type !== "none" && !v.visual) errors.push(`${id} に図表データがありません。`);
+        const visualType = v.visual_type || slot.visual_type;
+        if (visualType !== "none" && !v.visual) errors.push(`${id} に図表データがありません。`);
       });
     }
     for (const id of ["1111","1221","1222","1739","2140","3140"]) {
@@ -190,11 +229,20 @@
     };
   }
 
+  function auditSourceTypes(studentId="1221") {
+    const questions = generateExam(studentId);
+    return questions.reduce((summary, q) => {
+      summary[q.source_type] = (summary[q.source_type] || 0) + 1;
+      return summary;
+    }, { it_passport_actual: 0, it_passport_similar: 0, original: 0 });
+  }
+
   generateExamForStudent = generateExam;
   window.generateExamForStudent = generateExam;
   window.PYCBT_POOL_VERSION = VERSION;
   window.PYCBT_POOL_SIZE = slots.reduce((sum, slot) => sum + slot.variants.length, 0);
   window.validateQuestionPool = validatePool;
+  window.auditSourceTypes = auditSourceTypes;
   window.auditExamSets = auditExamSets;
   window.auditClass = auditClass;
   window.auditGrade = auditGrade;

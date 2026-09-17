@@ -46,6 +46,18 @@
   </section>
 
   <section class="card">
+    <h2>出典分類</h2>
+    <p class="small-note">IPA公式の年度・時期・問番号を確認できた実問題だけを「実問題」として扱います。類似問題・オリジナル問題には本試験出典を表示しません。</p>
+    <div class="audit-grid">
+      <div class="audit-card"><span>実問題</span><strong id="actual-count">—</strong></div>
+      <div class="audit-card"><span>ITパスポート類似</span><strong id="similar-count">—</strong></div>
+      <div class="audit-card"><span>オリジナル</span><strong id="original-count">—</strong></div>
+    </div>
+    <p id="source-note" class="small-note"></p>
+    <ul id="source-list" class="small-note"></ul>
+  </section>
+
+  <section class="card">
     <h2>クラス別結果</h2>
     <div class="table-wrap"><table><thead><tr><th>クラス</th><th>人数</th><th>隣接平均</th><th>隣接最大</th><th>隣接最小</th><th>完全一致セット</th></tr></thead><tbody id="class-rows"></tbody></table></div>
   </section>
@@ -58,6 +70,7 @@
 <script src="pool/pool-extra.js?v=20260908-45q"></script>
 <script src="pool/pool-paiza.js?v=20260916-ux1"></script>
 <script src="pool/pool-diagrams.js?v=20260916-ux1"></script>
+<script src="pool/pool-actual.js?v=20260917-ipa1"></script>
 <script src="pool/pool-engine.js?v=20260908-paiza1"></script>
 <script>
 (() => {
@@ -81,7 +94,8 @@
     $('summary').textContent=`${grade}年・${classes}クラス・各${maxAttendance}人で監査しました。隣接番号同士の同一問題数は少ないほど、座席付近での問題重複を抑えられます。`;
     const body=$('class-rows');body.replaceChildren();audits.forEach(a=>{const r=body.insertRow();[`${a.classNo}組`,a.count,a.avg.toFixed(2),a.max,a.min,a.duplicate].forEach(v=>{const c=r.insertCell();c.textContent=v})});
   }
-  function compare(){const a=$('id-a').value.trim(),b=$('id-b').value.trim();const same=overlap(a,b);$('same-count').textContent=`${same} / ${questionCount}`;$('same-rate').textContent=`${(same/questionCount*100).toFixed(1)}%`;$('same-count').className=same<=13?'ok':same<=18?'warn':'bad';}
+  function renderSourceAudit(id){const questions=generateExamForStudent(id);const counts=auditSourceTypes(id);const actual=questions.filter(q=>q.source_type==='it_passport_actual').sort((a,b)=>a.source_question_no-b.source_question_no);$('actual-count').textContent=counts.it_passport_actual;$('similar-count').textContent=counts.it_passport_similar;$('original-count').textContent=counts.original;$('actual-count').className=counts.it_passport_actual?'warn':'ok';$('source-note').textContent=counts.it_passport_actual?`${id} の問題セットには公式確認済みの実問題が含まれます。受験画面で出典が表示されます。`:`${id} の問題セットに公式確認済みの実問題はありません。受験画面に本試験出典は表示されません。`;const list=$('source-list');list.replaceChildren();actual.forEach(q=>{const item=document.createElement('li');const link=document.createElement('a');link.href=q.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=q.source_label;item.append(link);list.append(item);});}
+  function compare(){const a=$('id-a').value.trim(),b=$('id-b').value.trim();const same=overlap(a,b);$('same-count').textContent=`${same} / ${questionCount}`;$('same-rate').textContent=`${(same/questionCount*100).toFixed(1)}%`;$('same-count').className=same<=13?'ok':same<=18?'warn':'bad';renderSourceAudit(a);}
   $('run').onclick=run;$('compare').onclick=compare;run();compare();
 })();
 </script>

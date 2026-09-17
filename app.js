@@ -8,6 +8,7 @@
   const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[character]));
+  const hasSourceAttribution = (q) => q.source_type === "it_passport_actual" && q.source_label;
   function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v) || Number(v.slice(2)) === 0) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
   function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
@@ -20,10 +21,15 @@
     $("exam-notice").textContent = state.current === state.questions.length - 1 ? "最後の問題です。問題番号を押すと任意の問題へ移動できます。" : "";
     const q = state.questions[state.current]; const answer = state.answers[q.id] ?? "";
     const presentation = window.questionPresentation(q);
+    const attribution = hasSourceAttribution(q);
+    const sourceName = q.source_url
+      ? `<a href="${escapeHtml(q.source_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(q.source_label)}</a>`
+      : escapeHtml(q.source_label);
+    const sourceNote = q.source_supplemental_visual ? "（問題文・選択肢は原文、補助図は本サイト作成）" : q.source_modified ? "（一部改変）" : "";
     $("progress-label").textContent = `第 ${state.current + 1} 問 / ${state.questions.length} 問`;
     const visual = q.visual_type !== "none" ? `<div class="visual" aria-label="${escapeHtml(q.visual_type)}図表">${q.visual ?? "図表データ未登録"}</div>` : "";
     const input = q.format === "choice" ? `<div class="answer-area">${q.choices.map((choice, i) => `<label class="choice"><input type="radio" name="answer" value="${escapeHtml(choice)}" ${answer === choice ? "checked" : ""}/><span>${String.fromCharCode(65 + i)}. ${escapeHtml(choice)}</span></label>`).join("")}</div>` : `<div class="answer-area"><label>解答<input class="answer-input" id="answer-input" value="${escapeHtml(answer)}" autocomplete="off" /></label></div>`;
-    $("question-card").innerHTML = `<p class="question-meta">${escapeHtml(q.id)}　${escapeHtml(DOMAIN_NAMES[q.domain])}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}${q.paiza_chapter ? `　Python体験編 Chap.${q.paiza_chapter}` : ""}</p><div class="question-body"><h2 id="question-heading" tabindex="-1">${escapeHtml(presentation.text)}</h2>${presentation.code ? `<pre class="question-code"><code>${escapeHtml(presentation.code)}</code></pre>` : ''}${visual}${input}</div>`;
+    $("question-card").innerHTML = `<p class="question-meta">${escapeHtml(q.id)}　${escapeHtml(DOMAIN_NAMES[q.domain])}　${q.points}点　${q.format === "choice" ? "4択" : "入力"}${q.it_passport ? "　ITパスポート関連" : ""}${q.paiza_chapter ? `　Python体験編 Chap.${q.paiza_chapter}` : ""}</p><div class="question-body"><h2 id="question-heading" tabindex="-1">${escapeHtml(presentation.text)}</h2>${attribution ? `<p class="source-attribution">出典：${sourceName}${escapeHtml(sourceNote)}</p>` : ""}${presentation.code ? `<pre class="question-code"><code>${escapeHtml(presentation.code)}</code></pre>` : ''}${visual}${input}</div>`;
     document.querySelectorAll('input[name="answer"]').forEach(el => el.addEventListener("change", () => { state.answers[q.id] = el.value; persistActive(); renderNav(); }));
     $("answer-input")?.addEventListener("input", event => { state.answers[q.id] = event.target.value; persistActive(); renderNav(); });
     $("previous-button").disabled = state.current === 0;
@@ -81,7 +87,7 @@
       student: { id: state.student.id, grade: state.student.grade, class: state.student.classNo, attendance: state.student.attendance, name: state.student.name },
       session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
       scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
-      questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, skill: q.skill, paiza_chapter: q.paiza_chapter, curriculum_ref: q.curriculum_ref, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
+      questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, skill: q.skill, paiza_chapter: q.paiza_chapter, curriculum_ref: q.curriculum_ref, source_type: q.source_type, source_year: q.source_year, source_period: q.source_period, source_question_no: q.source_question_no, source_label: q.source_label, source_url: q.source_url, source_answer_url: q.source_answer_url, source_modified: q.source_modified, source_supplemental_visual: q.source_supplemental_visual, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
     };
   }
   async function submit(auto = false) {
