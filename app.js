@@ -1,24 +1,20 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  // 試験IDは学校サーバの /api/config から取得する。
-  // GitHub Pages側では試験IDを固定しない。
-  let EXAM_ID = null;
+  // 本番試験の前に local-server/server.js の ACTIVE_EXAM_ID と同じ値へ変更する。
+  const EXAM_ID = "practice-2026-09-25";
+  const STORAGE_PREFIX = `pycbt:v2:${EXAM_ID}:`;
   // 校内サーバのアドレスは各受験端末で入力し、その端末内にだけ保存する。
   const SERVER_IP_KEY = "pycbt:server-ip";
-  const serverUrl = (ip = localStorage.getItem(SERVER_IP_KEY)) => `http://${ip}:3000`;
+  const serverUrl = () => `http://${localStorage.getItem(SERVER_IP_KEY)}:3000`;
   const SERVER_TIMEOUT_MS = 12000;
-  const storagePrefix = () => {
-    if (!EXAM_ID) throw new Error("試験IDが未取得です。");
-    return `pycbt:v2:${EXAM_ID}:`;
-  };
-  $("exam-id-label").textContent = "試験ID：学校サーバから取得します";
+  $("exam-id-label").textContent = `試験ID：${EXAM_ID}${EXAM_ID.startsWith("practice-") ? "（練習用）" : ""}`;
   $("server-ip").value = localStorage.getItem(SERVER_IP_KEY) || "";
   const validIPv4 = value => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) &&
     value.split(".").every(part => Number(part) <= 255);
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
-  const activeKey = (id) => `${storagePrefix()}active:${id}`;
-  const completedKey = (id) => `${storagePrefix()}completed:${id}`;
+  const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
+  const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
   const getLocal = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const setLocal = (key, value) => localStorage.setItem(key, JSON.stringify(value));
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[character]));
@@ -26,47 +22,6 @@
   function parseStudentId(value) { const v = value.trim(); if (!/^[1-3][1-9]\d{2}$/.test(v) || Number(v.slice(2)) === 0) return null; return { id: v, grade: Number(v[0]), classNo: Number(v[1]), attendance: Number(v.slice(2)) }; }
   function normalize(value) { return String(value ?? "").trim().replace(/\s+/g, "").normalize("NFKC"); }
   function studentText(student) { return `${student.grade}年${student.classNo}組${student.attendance}番　${student.name}`; }
-
-  function setExamId(examId) {
-    const value = String(examId ?? "").trim();
-    if (!value || value.length > 100) throw new Error("学校サーバから有効な試験IDを取得できませんでした。");
-    EXAM_ID = value;
-    $("exam-id-label").textContent = `試験ID：${EXAM_ID}${EXAM_ID.startsWith("practice-") ? "（練習用）" : ""}`;
-    return EXAM_ID;
-  }
-
-  async function fetchExamConfig(serverIp) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), SERVER_TIMEOUT_MS);
-    try {
-      const response = await fetch(`${serverUrl(serverIp)}/api/config`, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-        cache: "no-store",
-        signal: controller.signal
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const config = await response.json();
-      return setExamId(config.examId);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  async function refreshExamIdFromServer(serverIp, { quiet = false } = {}) {
-    if (!validIPv4(serverIp)) return false;
-    try {
-      await fetchExamConfig(serverIp);
-      $("server-ip-hint").textContent = "学校サーバへ接続できました。上部の試験IDを確認してください。";
-      return true;
-    } catch (error) {
-      console.error("学校サーバから試験設定を取得できません", error);
-      EXAM_ID = null;
-      $("exam-id-label").textContent = "試験ID：取得できません";
-      if (!quiet) $("server-ip-hint").textContent = "学校サーバから試験IDを取得できません。IPアドレスと学校サーバの起動状態を確認してください。";
-      return false;
-    }
-  }
   function persistActive() {
     if (!state.student || state.submitted) return;
     setLocal(activeKey(state.student.id), { schema_version: 1, student: state.student, answers: state.answers, current: state.current, started_at: state.startedAt, ends_at: state.endsAt, question_ids: state.questions.map(q => q.id) });
@@ -187,7 +142,7 @@
     if ($("confirm-submit").open) $("confirm-submit").close('timeout');
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
     // 通信の前に端末へ結果を残す。サーバが応答しなくてもダウンロードできる。
-    setLocal(`${storagePrefix()}result:${state.student.id}`, state.record);
+    setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
     $("server-save-status").textContent = "学校サーバへ送信中です…";
@@ -212,7 +167,7 @@
         correct: byId.get(q.question_id).correct, points: byId.get(q.question_id).points,
         earned: byId.get(q.question_id).earned }));
       state.record.assessment.server_verified = true;
-      setLocal(`${storagePrefix()}result:${state.student.id}`, state.record);
+      setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
       $("total-score").textContent = formatScore(verified.scores.total.earned, verified.scores.total.max);
       $("correct-count").textContent = `正答数　${verified.scores.total.correct} / ${verified.scores.total.count} 問`;
       $("result-details").innerHTML = [verified.scores.knowledge, verified.scores.thinking].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
@@ -228,7 +183,7 @@
         : "⚠ 学校サーバへ送信できませんでした。結果JSONをダウンロードし、画面を閉じずに先生へ知らせてください。";
     }
   }
-  $("entry-form").addEventListener("submit", async event => {
+  $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
     const serverIp = $("server-ip").value.trim();
     if (!validIPv4(serverIp)) {
@@ -236,7 +191,6 @@
       return;
     }
     localStorage.setItem(SERVER_IP_KEY, serverIp);
-    if (!await refreshExamIdFromServer(serverIp)) return;
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
     const errors = validateBlueprint(generateExamForStudent(student.id));
@@ -248,17 +202,6 @@
     $("resume-message").textContent = state.pending.resume ? "この受験番号には中断中の試験があります。前回の解答と残り時間を復元します。" : "受験番号と氏名を確認してから開始してください。";
     $("confirm-start").showModal();
   });
-  $("server-ip").addEventListener("change", () => {
-    const serverIp = $("server-ip").value.trim();
-    if (validIPv4(serverIp)) {
-      localStorage.setItem(SERVER_IP_KEY, serverIp);
-      refreshExamIdFromServer(serverIp);
-    }
-  });
-
-  const savedServerIp = localStorage.getItem(SERVER_IP_KEY);
-  if (validIPv4(savedServerIp || "")) refreshExamIdFromServer(savedServerIp, { quiet: true });
-
   $("confirm-start").addEventListener("close", async () => {
     if ($("confirm-start").returnValue !== "confirm" || !state.pending) { state.pending = null; return; }
     const pending = state.pending;
