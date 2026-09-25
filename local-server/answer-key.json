@@ -1,0 +1,1897 @@
+{
+  "version": "2026-09-08-pool240",
+  "source_sha256": "5ef5ac0060123f9741adb9906ed2452d48746a96e3b3cbe0e27f863f39f7a1c8",
+  "slots": [
+    {
+      "id": "A01",
+      "domain": "A",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "端子"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "シグニファイア"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "静電容量方式"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "平行四辺形"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "矢印"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "domain": "A",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "状態の変化"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "ボタン押下"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "状態"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "タイマー終了"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "状態と変化の関係を整理する"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "domain": "A",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "問題を解くための手順"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "アルゴリズム"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "手順が明確で実行可能であること"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "アルゴリズムをプログラミング言語で表現できる"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "手順化"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "domain": "A",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "順次"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "分岐"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "反復"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "複雑な処理を整理して表現できる"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "分岐"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "domain": "A",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 4,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "7"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "18"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "15"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "B01",
+      "domain": "B",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "プログラミング"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "ソースコード"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "プログラミング言語"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "多様な分野のライブラリが公開されている"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "統計処理や人工知能"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "比較的読みやすい書き方で開発できる"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "domain": "B",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "print"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "引数"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "\"Hello\""
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "Hello"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "print(\"こんにちは\")"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "丸括弧"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "domain": "B",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "print(\"Hello\")"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "関数名のつづりが違う"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "大文字と小文字は区別される"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "開始と終了の引用符が対応していない"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "記号を半角で統一して確認する"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "エラーメッセージ"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C01",
+      "domain": "C",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "130"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "100 + 30"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "print(8 + 2)"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "文字列"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "105"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "引用符で囲まれているか"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "domain": "C",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "*"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "/"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "16"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "22"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "42"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "括弧の中"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "domain": "C",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "変数"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "文字列Soraを変数nameに代入する"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "score_1"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "アルファベットまたはアンダーバー"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "Kaiさん"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "値を一か所で変更して再利用できる"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "domain": "C",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "input"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "int(input())"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "str"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "120"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "点数7"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "文字列"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "domain": "C",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 4,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "標準入力"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "標準出力"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "12"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "11"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "10"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5.0",
+            "5"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "domain": "C",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "偽"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "真"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "偽"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "偽"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "真"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D01",
+      "domain": "D",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "if"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "=="
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "!="
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "a >= b"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "a < b"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            ":"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "domain": "D",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "else"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "elif"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "A"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "B"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "最初に成立した分岐の処理を実行する"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "elif name == \"PYTHON\":"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "10と等しい"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "10より大きい"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "10未満"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "等しい場合と大きい場合を分けるため"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "else"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "点数 >= 80"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "for"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5回"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "0,1,2,3,4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3回"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "反復"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 4,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "1"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "16"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "54"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E01",
+      "domain": "E",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "3T"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "8"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "ログとは，データベースの更新履歴を記録したファイルのことである。"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "domain": "E",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "スタック"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "キュー"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "push"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "b，c"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "機密性／完全性／可用性"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "E03",
+      "domain": "E",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "C"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "C"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "スタック"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "B"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E04",
+      "domain": "E",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "A"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "B"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "キュー"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "B"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E05",
+      "domain": "E",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 4,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "13"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "28"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "7"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "11"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E06",
+      "domain": "E",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "8"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F01",
+      "domain": "F",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "二分探索"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "コンピュータやネットワークなどを識別するための名前"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "アクセスポイントへの不正接続リスクを低減できる。"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "目的のデータや位置を見つける"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "線形探索"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "F02",
+      "domain": "F",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": true,
+      "variants": [
+        {
+          "answers": [
+            "バブルソート"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "IoT機器を廃棄するときは，内蔵されている記憶装置からの情報漏えいを防止するために物理的に破壊する。"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "（1）"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "小さい値から大きい値へ並べる"
+          ],
+          "it_passport": true
+        },
+        {
+          "answers": [
+            "大きい値から小さい値へ並べる"
+          ],
+          "it_passport": true
+        }
+      ]
+    },
+    {
+      "id": "F03",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "5"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "6"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "7"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F04",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "二分探索"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "O(n)"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "O(1)"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "O(n²)"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "比較するたび探索範囲をおおむね半分にできる"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F05",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "二分探索"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "現在の最大値を保持しながら順に比較する"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "整列＋二分探索"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "処理回数や実行時間の増え方"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "効率や必要な資源"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F06",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "2,5,8"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "18"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "7"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "20"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F07",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 4,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "1"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "13"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "15"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F08",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "input",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "1"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "3"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "domain": "A",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "有限性"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "明確性"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "入力"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "出力"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "処理時間や使用する記憶容量"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "domain": "B",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "#"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "コードに説明やメモを残す"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "コメントアウト"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "# Aを表示"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "Helloは表示されない"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "コメント"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "domain": "C",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "=="
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "!="
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "真と偽"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "aとbがともに真"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "aとbがともに偽"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "domain": "C",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "14"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "22"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "16"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "商3、余り4"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "domain": "D",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "分岐"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "反復"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "if"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "for"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "終了条件"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "domain": "D",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "9"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "6"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "10"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "B"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "4"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E07",
+      "domain": "E",
+      "viewpoint": "knowledge",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "二次元配列"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "a[行][列]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "12"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "座席表の行と列"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "E08",
+      "domain": "E",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "[2,9,6]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[3,1,8,5]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[4,7,3]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "6"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[9,4,1,7]"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F09",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "4回"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "8"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "1回"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "データが整列されている"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "2"
+          ],
+          "it_passport": false
+        }
+      ]
+    },
+    {
+      "id": "F10",
+      "domain": "F",
+      "viewpoint": "thinking",
+      "format": "choice",
+      "points": 2,
+      "it_passport": false,
+      "variants": [
+        {
+          "answers": [
+            "[2,5,4]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[3,7,6]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[1,3,4]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[2,5,8]"
+          ],
+          "it_passport": false
+        },
+        {
+          "answers": [
+            "[2,4,7,9]"
+          ],
+          "it_passport": false
+        }
+      ]
+    }
+  ]
+}

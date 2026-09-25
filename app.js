@@ -1,11 +1,16 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const STORAGE_PREFIX = "pycbt:v1:";
-   // ========================================
-  // 校内成績収集サーバ
-  // ========================================
-  const LOCAL_SERVER = "http://172.17.156.65:3000";
+  // 本番試験の前に local-server/server.js の ACTIVE_EXAM_ID と同じ値へ変更する。
+  const EXAM_ID = "practice-2026-09-25";
+  const STORAGE_PREFIX = `pycbt:v2:${EXAM_ID}:`;
+  // 校内サーバのアドレスは各受験端末で入力し、その端末内にだけ保存する。
+  const SERVER_IP_KEY = "pycbt:server-ip";
+  const serverUrl = () => `http://${localStorage.getItem(SERVER_IP_KEY)}:3000`;
   const SERVER_TIMEOUT_MS = 12000;
+  $("exam-id-label").textContent = `試験ID：${EXAM_ID}${EXAM_ID.startsWith("practice-") ? "（練習用）" : ""}`;
+  $("server-ip").value = localStorage.getItem(SERVER_IP_KEY) || "";
+  const validIPv4 = value => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) &&
+    value.split(".").every(part => Number(part) <= 255);
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
@@ -88,7 +93,8 @@
   function makeRecord(results, stats, auto) {
     return {
       schema_version: 1,
-      assessment: { title: "情報I CBT", blueprint: EXAM_BLUEPRINT, question_bank_capacity: QUESTION_BANK_CAPACITY },
+      assessment: { title: "情報I CBT", exam_id: EXAM_ID, pool_version: window.PYCBT_POOL_VERSION,
+        blueprint: EXAM_BLUEPRINT, question_bank_capacity: QUESTION_BANK_CAPACITY },
       student: { id: state.student.id, grade: state.student.grade, class: state.student.classNo, attendance: state.student.attendance, name: state.student.name },
       session: { started_at: state.startedAt, submitted_at: new Date().toISOString(), auto_submitted: auto, duration_seconds: EXAM_BLUEPRINT.durationSeconds },
       scores: { total: stats.total, knowledge: stats.knowledge, thinking: stats.thinking, domains: Object.fromEntries(stats.domains.map(item => [item.label.slice(0, 1), item])), it_passport: stats.it },
@@ -101,13 +107,15 @@
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), SERVER_TIMEOUT_MS);
     try {
-      const response = await fetch(`${LOCAL_SERVER}/api/results`, {
+      const response = await fetch(`${serverUrl()}/api/results`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
           studentCode: record.student.id,
           studentName: record.student.name,
+          examId: record.assessment.exam_id,
+          poolVersion: record.assessment.pool_version,
           className: `${record.student.grade}年${record.student.class}組`,
           score: record.scores.total.earned,
           knowledgeScore: record.scores.knowledge.earned,
@@ -148,12 +156,41 @@
     $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
     window.scrollTo({ top: 0, behavior: "smooth" });
     const serverResult = await sendResultToServer(state.record);
-    $("server-save-status").textContent = serverResult.success
-      ? "✅ 成績を学校サーバへ保存しました。"
-      : "⚠ 学校サーバへ送信できませんでした。結果JSONをダウンロードし、画面を閉じずに先生へ知らせてください。";
+    if (serverResult.success && serverResult.result.verified) {
+      const verified = serverResult.result;
+      const mismatch = verified.scores.total.earned !== stats.total.earned ||
+        verified.scores.knowledge.earned !== stats.knowledge.earned ||
+        verified.scores.thinking.earned !== stats.thinking.earned;
+      state.record.scores = verified.scores;
+      const byId = new Map(verified.questionResults.map(q => [q.question_id, q]));
+      state.record.questions = state.record.questions.map(q => ({ ...q,
+        correct: byId.get(q.question_id).correct, points: byId.get(q.question_id).points,
+        earned: byId.get(q.question_id).earned }));
+      state.record.assessment.server_verified = true;
+      setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
+      $("total-score").textContent = formatScore(verified.scores.total.earned, verified.scores.total.max);
+      $("correct-count").textContent = `正答数　${verified.scores.total.correct} / ${verified.scores.total.count} 問`;
+      $("result-details").innerHTML = [verified.scores.knowledge, verified.scores.thinking].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
+      $("domain-results").innerHTML = Object.values(verified.scores.domains).map(s => `<div><span>${s.label}</span><strong>${Math.round(s.earned / s.max * 100)}%</strong><small>${formatScore(s.earned, s.max)}</small></div>`).join("");
+      const it = verified.scores.it_passport;
+      $("it-result").innerHTML = `<strong>${it.correct} / ${it.count} 問</strong><span>${Math.round(it.earned / it.max * 100)}%　${formatScore(it.earned, it.max)}</span>`;
+      $("server-save-status").textContent = mismatch
+        ? "✅ 学校サーバで再採点して保存しました。端末側の点数と差があるため先生に知らせてください。"
+        : "✅ 学校サーバで再採点し、成績を保存しました。";
+    } else {
+      $("server-save-status").textContent = serverResult.success
+        ? "⚠ 成績は保存されましたが、サーバで採点を確認できません。先生へ知らせてください。"
+        : "⚠ 学校サーバへ送信できませんでした。結果JSONをダウンロードし、画面を閉じずに先生へ知らせてください。";
+    }
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
+    const serverIp = $("server-ip").value.trim();
+    if (!validIPv4(serverIp)) {
+      $("server-ip-hint").textContent = "先生から指定された学校サーバのIPv4アドレスを入力してください。";
+      return;
+    }
+    localStorage.setItem(SERVER_IP_KEY, serverIp);
     if (!student) { $("student-id-hint").textContent = "受験番号は「学年1桁・組1桁・出席番号2桁」の4桁で入力してください（例：1215）。"; return; }
     if (!name) return;
     const errors = validateBlueprint(generateExamForStudent(student.id));

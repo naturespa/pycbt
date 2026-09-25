@@ -131,6 +131,9 @@ button.addEventListener("click", async () => {
 
     const data = await response.json();
 
+    // 接続できた先生PCのIPを、このブラウザの受験画面でも使用する。
+    localStorage.setItem("pycbt:server-ip", ip);
+
 
     result.className = "success";
 

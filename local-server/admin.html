@@ -38,20 +38,22 @@
   <main>
     <section class="panel">
       <div class="toolbar">
+        <label>試験 <select id="exam-filter"><option value="">全試験</option></select></label>
         <label>クラス <select id="class-filter"><option value="">全クラス</option></select></label>
         <label class="inline"><input id="latest-only" type="checkbox" checked>受験番号ごとの最新記録のみ</label>
         <button id="refresh" type="button">再読み込み</button>
         <a id="download" class="button" href="/api/results.csv?latest=1" download>表示中の結果をCSV出力</a>
+        <a class="button" href="/api/backup" download>DBをバックアップ</a>
       </div>
       <p id="summary">読み込み中…</p>
       <p id="status" role="status" aria-live="polite"></p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>受験番号</th><th>クラス</th><th>番号</th><th>氏名</th><th>総合</th><th>知識・技能</th><th>思考・判断・表現</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>提出時刻</th><th>記録ID</th></tr></thead>
+          <thead><tr><th>試験ID</th><th>受験番号</th><th>クラス</th><th>番号</th><th>氏名</th><th>総合</th><th>知識・技能</th><th>思考・判断・表現</th><th>採点</th><th>差異</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>提出時刻</th><th>記録ID</th></tr></thead>
           <tbody id="results"></tbody>
         </table>
       </div>
-      <p class="note">同じ受験番号で複数回提出された場合、通常は最後に保存された記録を表示します。再受験の記録を確認する際はチェックを外してください。CSVはExcelで開けるUTF-8形式です。</p>
+      <p class="note">通常は、試験ごとに受験番号の最新記録を表示します。再受験の記録を確認する際はチェックを外してください。「従来記録」はサーバ採点導入前の記録です。DBバックアップは先生PCの <code>C:\cbt\backups</code> にも作成されます。</p>
     </section>
   </main>
   <script>
@@ -66,11 +68,13 @@
     }
     function filteredRows() {
       let rows = allRows;
+      if ($("exam-filter").value) rows = rows.filter(row => row.exam_id === $("exam-filter").value);
       if ($("latest-only").checked) {
         const seen = new Set();
         rows = rows.filter(row => {
-          if (seen.has(row.student_code)) return false;
-          seen.add(row.student_code);
+          const key = `${row.exam_id}:${row.student_code}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
           return true;
         });
       }
@@ -79,20 +83,24 @@
     }
     function render() {
       const rows = filteredRows();
-      const uniqueCount = new Set(allRows.map(row => row.student_code)).size;
-      $("summary").textContent = `表示 ${rows.length} 件 ／ 提出済み ${uniqueCount} 人 ／ 全記録 ${allRows.length} 件`;
+      const selectedExam = $("exam-filter").value;
+      const examRows = selectedExam ? allRows.filter(row => row.exam_id === selectedExam) : allRows;
+      const uniqueCount = new Set(examRows.map(row => `${row.exam_id}:${row.student_code}`)).size;
+      $("summary").textContent = `表示 ${rows.length} 件 ／ ${selectedExam ? "提出" : "試験別の延べ提出"} ${uniqueCount} 人 ／ 全記録 ${allRows.length} 件`;
       const tbody = $("results");
       tbody.replaceChildren();
       for (const row of rows) {
-        const cells = [row.student_code, row.class_name, row.attendance, row.student_name,
+        const cells = [row.exam_id, row.student_code, row.class_name, row.attendance, row.student_name,
           row.score, row.knowledge_score, row.thinking_score,
+          row.verification_status === "server_scored" ? "サーバ確認" : "従来記録",
+          row.score_mismatch ? "要確認" : "—",
           ..."ABCDEF".split("").map(d => row.domains?.[d] ? `${row.domains[d].earned}/${row.domains[d].max}` : "—"),
           timestamp(row.submitted_at), row.id];
         const tr = document.createElement("tr");
         cells.forEach((value, index) => {
           const td = document.createElement("td");
           td.textContent = value ?? "";
-          if (index === 4) td.className = "score";
+          if (index === 5) td.className = "score";
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -100,12 +108,13 @@
       if (!rows.length) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 15;
+        td.colSpan = 18;
         td.textContent = "該当する提出記録はありません。";
         tr.appendChild(td);
         tbody.appendChild(tr);
       }
       const query = new URLSearchParams({ latest: $("latest-only").checked ? "1" : "0" });
+      if ($("exam-filter").value) query.set("exam", $("exam-filter").value);
       if ($("class-filter").value) query.set("class", $("class-filter").value);
       $("download").href = `/api/results.csv?${query}`;
     }
@@ -118,6 +127,10 @@
         const data = await response.json();
         if (!data.success || !Array.isArray(data.results)) throw new Error("成績データを取得できませんでした");
         allRows = data.results;
+        const examSelected = $("exam-filter").value || data.activeExamId;
+        const exams = [...new Set([...allRows.map(row => row.exam_id).filter(Boolean), data.activeExamId])].sort();
+        $("exam-filter").replaceChildren(new Option("全試験", ""), ...exams.map(id => new Option(id === "legacy" ? "従来記録" : id, id)));
+        if (exams.includes(examSelected)) $("exam-filter").value = examSelected;
         const selected = $("class-filter").value;
         const classes = [...new Set(allRows.map(row => row.class_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
         $("class-filter").replaceChildren(new Option("全クラス", ""), ...classes.map(name => new Option(name, name)));
@@ -129,6 +142,7 @@
         $("status").textContent = `読み込みに失敗しました：${error.message}`;
       }
     }
+    $("exam-filter").addEventListener("change", render);
     $("class-filter").addEventListener("change", render);
     $("latest-only").addEventListener("change", render);
     $("refresh").addEventListener("click", reload);

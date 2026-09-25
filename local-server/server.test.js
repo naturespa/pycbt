@@ -1,15 +1,18 @@
 "use strict";
-// 依存パッケージなしで、旧DBの読み取り・提出・管理制限・CSVを検証する。
+// 依存パッケージなしで、旧DBの移行・サーバ再採点・管理制限・CSVを検証する。
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
+const { poolVersion } = require("./scoring");
 
 const routes = new Map();
 const saved = [{ id: 1, student_code: "1215", student_name: "旧データ", class_name: "1年2組",
   score: 80, knowledge_score: 30, thinking_score: 50,
   answers: JSON.stringify([{ domain: "A", earned: 8, points: 10 }]),
-  started_at: "2026-09-25T00:00:00.000Z", submitted_at: "2026-09-25 01:00:00" }];
+  started_at: "2026-09-25T00:00:00.000Z", submitted_at: "2026-09-25 01:00:00",
+  exam_id: "legacy", verification_status: "legacy_unverified" }];
+const migrations = [];
 const app = { disable() {}, use() {}, listen(_port, _host, callback) { callback(); } };
 for (const method of ["get", "post", "options"]) {
   app[method] = (route, ...handlers) => routes.set(`${method.toUpperCase()} ${route}`, handlers);
@@ -17,19 +20,24 @@ for (const method of ["get", "post", "options"]) {
 const express = () => app;
 express.json = () => (_req, _res, next) => next();
 class Database {
-  pragma() {}
-  exec() {}
+  pragma(sql) { if (sql.startsWith("table_info")) return ["id", "student_code", "student_name",
+    "class_name", "score", "knowledge_score", "thinking_score", "answers", "started_at",
+    "submitted_at"].map(name => ({ name })); }
+  exec(sql) { if (sql.startsWith("ALTER TABLE")) migrations.push(sql); }
+  backup() { return Promise.resolve(); }
   prepare(sql) {
     if (sql.includes("INSERT INTO")) return { run(code, name, className, score, knowledge,
-      thinking, answers, started, submitted) {
+      thinking, answers, started, submitted, examId, version, status, clientScore, mismatch) {
       const id = saved.length + 1;
       saved.push({ id, student_code: code, student_name: name, class_name: className,
         score, knowledge_score: knowledge, thinking_score: thinking,
-        answers, started_at: started, submitted_at: submitted });
+        answers, started_at: started, submitted_at: submitted, exam_id: examId,
+        pool_version: version, verification_status: status,
+        client_score: clientScore, score_mismatch: mismatch });
       return { lastInsertRowid: id };
     } };
-    if (sql.includes("WHERE student_code")) return { get(code, started) {
-      return saved.find(row => row.student_code === code && row.started_at === started);
+    if (sql.includes("WHERE exam_id")) return { get(examId, code, started) {
+      return saved.find(row => row.exam_id === examId && row.student_code === code && row.started_at === started);
     } };
     return { all() { return [...saved].reverse(); } };
   }
@@ -39,6 +47,7 @@ function fakeRequire(name) {
   if (name === "better-sqlite3") return Database;
   if (name === "cors") return () => (_req, _res, next) => next();
   if (name === "os") return { networkInterfaces: () => ({}) };
+  if (name === "./scoring") return require("./scoring");
   return require(name);
 }
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, "server.js"), "utf8"), {
@@ -68,26 +77,51 @@ function request(method, route, { address = "127.0.0.1", host = "localhost:3000"
 const old = request("GET", "/api/results");
 assert.equal(old.body.results[0].student_name, "旧データ");
 assert.equal(old.body.results[0].domains.A.earned, 8);
-assert.equal(request("GET", "/api/results", { address: "172.17.156.99" }).statusCode, 403);
+assert.equal(old.body.results[0].verification_status, "legacy_unverified");
+assert.equal(migrations.length, 5);
+assert.equal(request("GET", "/api/results", { address: "192.0.2.10" }).statusCode, 403);
 assert.equal(request("GET", "/api/results.csv", { host: "evil.example:3000" }).statusCode, 403);
-assert.equal(request("GET", "/admin", { address: "172.17.156.99" }).statusCode, 403);
+assert.equal(request("GET", "/admin", { address: "192.0.2.10" }).statusCode, 403);
 
-const payload = { studentCode: "1215", studentName: "=SUM(1+1)", className: "1年2組",
-  score: 90, knowledgeScore: 35, thinkingScore: 55,
-  answers: [{ domain: "B", earned: 3, points: 5 }], startedAt: "2026-09-25T02:00:00.000Z" };
+// クライアントと同じ問題生成を使って45問を組み、送信点を偽装しても再採点する。
+const browser = vm.createContext({ window: {}, document: { getElementById: () => ({ value: "1215" }) },
+  console: { info() {}, error: (...args) => { throw Error(args.join(" ")); } } });
+for (const file of ["question-bank.js", "pool/pool-ab.js", "pool/pool-cd.js", "pool/pool-e.js",
+  "pool/pool-f.js", "pool/pool-extra.js", "pool/pool-paiza.js", "pool/pool-diagrams.js",
+  "pool/pool-actual.js", "pool/pool-engine.js"]) {
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), browser, { filename: file });
+}
+const questions = browser.window.generateExamForStudent("1215");
+const payload = { studentCode: "1215", studentName: "=SUM(1+1)", className: "9年9組",
+  score: 0, knowledgeScore: 0, thinkingScore: 0,
+  examId: "practice-2026-09-25", poolVersion,
+  answers: questions.map(q => ({ question_id: q.id, response: q.answer,
+    earned: 0, correct: false, points: 99 })), startedAt: "2026-09-25T02:00:00.000Z" };
 assert.equal(request("POST", "/api/results", {
   origin: "https://other.example", body: payload }).statusCode, 403);
 const result = request("POST", "/api/results", {
-  address: "172.17.156.99", origin: "https://naturespa.github.io", body: payload });
+  address: "192.0.2.10", origin: "https://naturespa.github.io", body: payload });
 assert.equal(result.body.success, true);
+assert.equal(result.body.verified, true);
+assert.equal(result.body.scores.total.earned, 100);
 assert.equal(saved.length, 2);
+assert.equal(saved[1].score, 100);
+assert.equal(saved[1].class_name, "1年2組");
+assert.equal(saved[1].score_mismatch, 1);
+assert.equal(JSON.parse(saved[1].answers)[0].points !== 99, true);
 const duplicate = request("POST", "/api/results", { body: payload });
 assert.equal(duplicate.body.duplicate, true);
+assert.equal(duplicate.body.scores.total.earned, 100);
 assert.equal(saved.length, 2);
-assert.equal(request("GET", "/api/results").body.count, 1);
+assert.equal(request("GET", "/api/results").body.count, 2);
 assert.equal(request("GET", "/api/results", { query: { latest: "0" } }).body.count, 2);
+assert.equal(request("GET", "/api/results", { query: { exam: "legacy" } }).body.count, 1);
+assert.equal(request("POST", "/api/results", { body: { ...payload, examId: "unexpected" } }).statusCode, 409);
+assert.equal(request("POST", "/api/results", { body: { ...payload, startedAt: "2026-09-25T03:00:00.000Z",
+  answers: payload.answers.map((q, i) => i === 0 ? { ...q, question_id: "wrong" } : q) } }).statusCode, 422);
 const csv = request("GET", "/api/results.csv").body;
 assert.ok(csv.startsWith("\uFEFF"));
 assert.ok(csv.includes("\"'=SUM(1+1)\""));
-assert.ok(csv.includes('"3","5"'));
+assert.ok(csv.includes('"server_scored"'));
+assert.ok(csv.includes('"100","40","60"'));
 console.log("server.test.js: OK");

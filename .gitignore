@@ -1,0 +1,3 @@
+node_modules/
+local-server/pycbt.db*
+local-server/backups/
