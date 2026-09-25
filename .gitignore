@@ -1,3 +1,4 @@
 node_modules/
 local-server/pycbt.db*
 local-server/backups/
+local-server/meibo.csv

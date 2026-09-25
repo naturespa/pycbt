@@ -13,6 +13,7 @@ const saved = [{ id: 1, student_code: "1215", student_name: "旧データ", clas
   started_at: "2026-09-25T00:00:00.000Z", submitted_at: "2026-09-25 01:00:00",
   exam_id: "legacy", verification_status: "legacy_unverified" }];
 const migrations = [];
+const roster = [];
 const app = { disable() {}, use() {}, listen(_port, _host, callback) { callback(); } };
 for (const method of ["get", "post", "options"]) {
   app[method] = (route, ...handlers) => routes.set(`${method.toUpperCase()} ${route}`, handlers);
@@ -25,7 +26,19 @@ class Database {
     "submitted_at"].map(name => ({ name })); }
   exec(sql) { if (sql.startsWith("ALTER TABLE")) migrations.push(sql); }
   backup() { return Promise.resolve(); }
+  transaction(fn) { return (...args) => fn(...args); }
   prepare(sql) {
+    if (sql.includes("INSERT INTO student_roster")) return { run(year, grade, code, name) {
+      roster.push({ academic_year: year, grade, student_code: code, student_name: name });
+    } };
+    if (sql.includes("DELETE FROM student_roster")) return { run(year, grade) {
+      for (let i = roster.length - 1; i >= 0; i--) {
+        if (roster[i].academic_year === year && roster[i].grade === grade) roster.splice(i, 1);
+      }
+    } };
+    if (sql.includes("FROM student_roster")) return { all(year, grade) {
+      return roster.filter(row => row.academic_year === year && row.grade === grade);
+    } };
     if (sql.includes("INSERT INTO")) return { run(code, name, className, score, knowledge,
       thinking, answers, started, submitted, examId, version, status, clientScore, mismatch) {
       const id = saved.length + 1;
@@ -124,4 +137,53 @@ assert.ok(csv.startsWith("\uFEFF"));
 assert.ok(csv.includes("\"'=SUM(1+1)\""));
 assert.ok(csv.includes('"server_scored"'));
 assert.ok(csv.includes('"100","40","60"'));
-console.log("server.test.js: OK");
+
+// 学校側のCSVだけを読み、同じ年度・学年だけ入れ替え、成績を保持して照合する。
+const rosterFile = path.join(__dirname, "meibo.csv");
+assert.equal(fs.existsSync(rosterFile), false, "テスト先に実際の meibo.csv がある場合は実行しない");
+fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,未提出者\n2215,他学年\n");
+(async () => {
+  try {
+    const blocked = request("GET", "/api/roster/preview-file", {
+      address: "192.0.2.10", query: { year: "2026", grade: "1" } });
+    assert.equal(blocked.statusCode, 403);
+    const preview = request("GET", "/api/roster/preview-file", {
+      query: { year: "2026", grade: "1" } }).body;
+    assert.equal(preview.success, true);
+    assert.equal(preview.changes.incoming, 2);
+    assert.equal(preview.otherGrades, 1);
+    assert.equal(request("POST", "/api/roster/import-file", {
+      body: { year: "2026", grade: "1", fileHash: "wrong", expectedExisting: 0 }
+    }).statusCode, 409);
+    roster.push({ academic_year: "2025", grade: 1, student_code: "1217", student_name: "前年" });
+    const imported = request("POST", "/api/roster/import-file", {
+      body: { year: "2026", grade: "1", fileHash: preview.fileHash, expectedExisting: 0 }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(imported.body.success, true);
+    assert.equal(roster.length, 3);
+    assert.equal(saved.length, 2);
+    const status = request("GET", "/api/roster/status", {
+      query: { year: "2026", grade: "1", exam: "practice-2026-09-25" } }).body;
+    assert.equal(status.registered, 2);
+    assert.equal(status.submitted, 1);
+    assert.equal(status.missing, 1);
+    assert.equal(status.nameMismatches, 1);
+    assert.equal(status.rows[0].status, "氏名不一致");
+    assert.ok(request("GET", "/api/roster/status.csv", {
+      query: { year: "2026", grade: "1" } }).body.includes("未提出"));
+    fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,別人\n");
+    const newPreview = request("GET", "/api/roster/preview-file", {
+      query: { year: "2026", grade: "1" } }).body;
+    assert.equal(newPreview.changes.removed, 1);
+    assert.equal(newPreview.changes.changed, 1);
+    const outdated = request("POST", "/api/roster/import-file", {
+      body: { year: "2026", grade: "1", fileHash: preview.fileHash, expectedExisting: 2 }
+    });
+    assert.equal(outdated.statusCode, 409);
+    assert.equal(roster.length, 3);
+    console.log("server.test.js: OK");
+  } finally {
+    fs.unlinkSync(rosterFile);
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

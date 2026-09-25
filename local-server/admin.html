@@ -16,10 +16,14 @@
     .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
     label { display: grid; gap: 5px; font-weight: 700; }
     label.inline { display: flex; align-items: center; gap: 8px; padding-bottom: 9px; }
-    select, button, a.button { font: inherit; border-radius: 7px; padding: 10px 12px; }
-    select { border: 1px solid #899cb7; background: white; min-width: 150px; }
+    select, input[type=number], button, a.button { font: inherit; border-radius: 7px; padding: 10px 12px; }
+    select, input[type=number] { border: 1px solid #899cb7; background: white; min-width: 110px; }
     button, a.button { border: 1px solid #204f8e; background: #204f8e; color: white; cursor: pointer; text-decoration: none; }
     button:hover, a.button:hover { background: #163d71; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .roster { margin-top: 20px; }
+    .roster h2 { margin: 0 0 14px; }
+    .error { color: #a11f2a; font-weight: 700; }
     #summary { margin: 18px 0 0; font-weight: 700; }
     #status { margin: 8px 0 0; min-height: 1.4em; }
     #status.error { color: #a11f2a; font-weight: 700; }
@@ -55,11 +59,32 @@
       </div>
       <p class="note">通常は、試験ごとに受験番号の最新記録を表示します。再受験の記録を確認する際はチェックを外してください。「従来記録」はサーバ採点導入前の記録です。DBバックアップは先生PCの <code>C:\cbt\backups</code> にも作成されます。</p>
     </section>
+    <section class="panel roster">
+      <h2>名簿照合</h2>
+      <div class="toolbar">
+        <label>年度 <input id="roster-year" type="number" min="2000" max="2099" value="2026"></label>
+        <label>学年 <select id="roster-grade"><option value="1">1年</option><option value="2">2年</option><option value="3">3年</option></select></label>
+        <button id="roster-preview" type="button">meibo.csv を確認</button>
+        <button id="roster-import" type="button" disabled>確認した名簿を取り込む</button>
+        <a id="roster-download" class="button" href="#" download>照合結果をCSV出力</a>
+      </div>
+      <p class="note">先生PCの <code>C:\cbt\meibo.csv</code> を読みます。取り込み前に変更件数を確認してください。取り込むと、選択した年度・学年の名簿を置き換え、既存の成績は保持します。</p>
+      <p id="roster-message" role="status" aria-live="polite"></p>
+      <p id="roster-summary">照合結果を読み込み中…</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>提出状況</th><th>受験番号</th><th>クラス</th><th>出席番号</th><th>名簿氏名</th><th>入力氏名</th><th>提出回数</th><th>得点</th><th>提出時刻</th></tr></thead>
+          <tbody id="roster-results"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
   <script>
     "use strict";
     const $ = id => document.getElementById(id);
     let allRows = [];
+    let activeExamId = "";
+    let previewToken = null;
     function timestamp(value) {
       if (!value) return "";
       const iso = value.includes("T") ? value : value.replace(" ", "T") + "Z";
@@ -127,6 +152,7 @@
         const data = await response.json();
         if (!data.success || !Array.isArray(data.results)) throw new Error("成績データを取得できませんでした");
         allRows = data.results;
+        activeExamId = data.activeExamId;
         const examSelected = $("exam-filter").value || data.activeExamId;
         const exams = [...new Set([...allRows.map(row => row.exam_id).filter(Boolean), data.activeExamId])].sort();
         $("exam-filter").replaceChildren(new Option("全試験", ""), ...exams.map(id => new Option(id === "legacy" ? "従来記録" : id, id)));
@@ -137,15 +163,108 @@
         if (classes.includes(selected)) $("class-filter").value = selected;
         $("status").textContent = `更新しました（${new Date().toLocaleTimeString("ja-JP")}）`;
         render();
+        await loadRosterStatus();
       } catch (error) {
         $("status").className = "error";
         $("status").textContent = `読み込みに失敗しました：${error.message}`;
       }
     }
-    $("exam-filter").addEventListener("change", render);
+    function rosterQuery() {
+      const query = new URLSearchParams({ year: $("roster-year").value, grade: $("roster-grade").value });
+      query.set("exam", $("exam-filter").value || activeExamId);
+      return query;
+    }
+    async function apiJson(url, options) {
+      const response = await fetch(url, { cache: "no-store", ...options });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.errors?.join("／") || `HTTP ${response.status}`);
+      return data;
+    }
+    async function loadRosterStatus() {
+      const query = rosterQuery();
+      if (!query.get("exam")) return;
+      $("roster-download").href = `/api/roster/status.csv?${query}`;
+      $("roster-summary").textContent = "照合結果を読み込み中…";
+      try {
+        const data = await apiJson(`/api/roster/status?${query}`);
+        $("roster-summary").textContent = `試験 ${data.examId} ／ 名簿 ${data.registered} 人 ／ 提出 ${data.submitted} 人 ／ 未提出 ${data.missing} 人 ／ 氏名不一致 ${data.nameMismatches} 人 ／ 複数提出 ${data.duplicates} 人 ／ 名簿外の提出 ${data.unmatched.length} 人`;
+        const tbody = $("roster-results");
+        tbody.replaceChildren();
+        for (const row of [...data.rows, ...data.unmatched.map(row => ({
+          status: "名簿外の提出", student_code: row.student_code, class_name: row.class_name,
+          attendance: row.attendance, roster_name: "", submitted_name: row.student_name,
+          attempts: row.attempts, score: row.score, submitted_at: row.submitted_at
+        }))]) {
+          const tr = document.createElement("tr");
+          for (const value of [row.status, row.student_code, row.class_name, row.attendance,
+            row.roster_name, row.submitted_name, row.attempts, row.score, timestamp(row.submitted_at)]) {
+            const td = document.createElement("td");
+            td.textContent = value ?? "";
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        if (!tbody.children.length) {
+          const tr = document.createElement("tr"), td = document.createElement("td");
+          td.colSpan = 9;
+          td.textContent = "この年度・学年の名簿と提出記録はありません。";
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+      } catch (error) {
+        $("roster-summary").textContent = `照合結果を取得できませんでした：${error.message}`;
+      }
+    }
+    function invalidatePreview() {
+      previewToken = null;
+      $("roster-import").disabled = true;
+      $("roster-message").textContent = "";
+      $("roster-message").className = "";
+    }
+    async function previewRoster() {
+      invalidatePreview();
+      $("roster-message").textContent = "meibo.csv を確認中…";
+      const query = rosterQuery();
+      try {
+        const data = await apiJson(`/api/roster/preview-file?${query}`);
+        if (query.get("year") !== $("roster-year").value || query.get("grade") !== $("roster-grade").value) return;
+        previewToken = { year: query.get("year"), grade: query.get("grade"),
+          fileHash: data.fileHash, expectedExisting: data.changes.existing };
+        const c = data.changes;
+        $("roster-message").textContent = `確認結果：現在 ${c.existing} 人、CSVの選択学年 ${c.incoming} 人${data.otherGrades ? `（他学年 ${data.otherGrades} 人は対象外）` : ""}、追加 ${c.added} 人、氏名変更 ${c.changed} 人、削除 ${c.removed} 人${c.removedCodes.length ? `（削除対象番号：${c.removedCodes.join("、")}${c.removed > c.removedCodes.length ? " ほか" : ""}）` : ""}。内容を確認して取り込んでください。`;
+        $("roster-import").disabled = false;
+      } catch (error) {
+        $("roster-message").className = "error";
+        $("roster-message").textContent = `名簿を確認できませんでした：${error.message}`;
+      }
+    }
+    async function importRoster() {
+      if (!previewToken) return;
+      const data = previewToken;
+      if (data.year !== $("roster-year").value || data.grade !== $("roster-grade").value) return;
+      if (!window.confirm(`${data.year}年度・${data.grade}年の名簿を meibo.csv の内容に置き換えます。続けますか？`)) return;
+      $("roster-import").disabled = true;
+      $("roster-message").textContent = "バックアップを作成して名簿を取り込み中…";
+      try {
+        const result = await apiJson("/api/roster/import-file", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+        invalidatePreview();
+        $("roster-message").textContent = `${result.count} 人を取り込みました。取込前のDBバックアップ：C:\\cbt\\backups\\${result.backupFile}`;
+        await loadRosterStatus();
+      } catch (error) {
+        invalidatePreview();
+        $("roster-message").className = "error";
+        $("roster-message").textContent = `取込に失敗しました：${error.message}。CSVを再確認してください。`;
+      }
+    }
+    $("exam-filter").addEventListener("change", () => { render(); loadRosterStatus(); });
     $("class-filter").addEventListener("change", render);
     $("latest-only").addEventListener("change", render);
     $("refresh").addEventListener("click", reload);
+    $("roster-year").addEventListener("input", () => { invalidatePreview(); loadRosterStatus(); });
+    $("roster-grade").addEventListener("change", () => { invalidatePreview(); loadRosterStatus(); });
+    $("roster-preview").addEventListener("click", previewRoster);
+    $("roster-import").addEventListener("click", importRoster);
     reload();
   </script>
 </body>

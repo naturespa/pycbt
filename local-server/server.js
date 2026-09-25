@@ -7,6 +7,8 @@ const cors = require("cors");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
+const crypto = require("crypto");
+const { TextDecoder } = require("util");
 const { scoreExam, poolVersion } = require("./scoring");
 
 const app = express();
@@ -35,6 +37,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_student_code ON exam_results(student_code);
   CREATE INDEX IF NOT EXISTS idx_class_name ON exam_results(class_name);
+  CREATE TABLE IF NOT EXISTS student_roster (
+    academic_year TEXT NOT NULL,
+    grade INTEGER NOT NULL,
+    student_code TEXT NOT NULL,
+    student_name TEXT NOT NULL,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (academic_year, student_code)
+  );
+  CREATE INDEX IF NOT EXISTS idx_roster_year_grade
+    ON student_roster(academic_year, grade);
 `);
 // 旧表を破棄しない移行。以前の記録は「従来記録／未検証」として残る。
 const existingColumns = new Set(db.pragma("table_info(exam_results)").map(column => column.name));
@@ -65,6 +77,17 @@ const allResults = db.prepare(`
          knowledge_score, thinking_score, answers, started_at, submitted_at,
          exam_id, pool_version, verification_status, client_score, score_mismatch
   FROM exam_results ORDER BY id DESC
+`);
+const rosterForGrade = db.prepare(`
+  SELECT student_code, student_name, imported_at FROM student_roster
+  WHERE academic_year = ? AND grade = ? ORDER BY student_code
+`);
+const deleteRosterForGrade = db.prepare(`
+  DELETE FROM student_roster WHERE academic_year = ? AND grade = ?
+`);
+const insertRoster = db.prepare(`
+  INSERT INTO student_roster (academic_year, grade, student_code, student_name)
+  VALUES (?, ?, ?, ?)
 `);
 
 function requireTeacherPC(req, res, next) {
@@ -179,6 +202,202 @@ function selectedRows(req) {
   if (req.query.class) rows = rows.filter(row => row.class_name === req.query.class);
   return rows.sort((a, b) => a.student_code.localeCompare(b.student_code, "ja") || b.id - a.id);
 }
+
+function rosterScope(input) {
+  const year = String(input.year || "").trim();
+  const grade = Number(input.grade);
+  if (!/^20\d{2}$/.test(year) || ![1, 2, 3].includes(grade)) {
+    throw new Error("年度（西暦4桁）と学年（1～3）を指定してください");
+  }
+  return { year, grade };
+}
+function normalizeName(name) {
+  return String(name || "").normalize("NFKC").replace(/[\s\u3000]+/g, "");
+}
+function validateRoster(input) {
+  const { year, grade } = rosterScope(input);
+  const errors = [], seen = new Set(), rows = [];
+  let otherGrades = 0;
+  if (!Array.isArray(input.rows) || !input.rows.length || input.rows.length > 500) {
+    throw new Error("名簿は1～500件のCSVを指定してください");
+  }
+  input.rows.forEach((row, index) => {
+    const code = String(row?.code ?? "").normalize("NFKC").trim();
+    const name = String(row?.name ?? "").trim();
+    const line = Number(row?.line) || index + 2;
+    if (/^[1-3][1-9]\d{2}$/.test(code) && Number(code[0]) !== grade) {
+      otherGrades += 1;
+      return;
+    }
+    if (!/^[1-3][1-9]\d{2}$/.test(code) || code.slice(2) === "00") {
+      errors.push(`${line}行目：受験番号は4桁で入力してください`);
+    } else if (seen.has(code)) {
+      errors.push(`${line}行目：受験番号 ${code} が重複しています`);
+    } else {
+      seen.add(code);
+    }
+    if (!name || name.length > 60) errors.push(`${line}行目：氏名を1～60文字で入力してください`);
+    if (errors.length < 100 && /^[1-3][1-9]\d{2}$/.test(code) && name) {
+      rows.push({ code, name });
+    }
+  });
+  if (!rows.length && !errors.length) errors.push("選択した学年の生徒がCSVにいません");
+  return { year, grade, rows, errors: errors.slice(0, 30), otherGrades };
+}
+function rosterPreview(input) {
+  const parsed = validateRoster(input);
+  if (parsed.errors.length) return { ...parsed, changes: null };
+  const old = rosterForGrade.all(parsed.year, parsed.grade);
+  const oldByCode = new Map(old.map(row => [row.student_code, row.student_name]));
+  const incoming = new Set(parsed.rows.map(row => row.code));
+  const added = parsed.rows.filter(row => !oldByCode.has(row.code)).length;
+  const changed = parsed.rows.filter(row => oldByCode.has(row.code) &&
+    normalizeName(oldByCode.get(row.code)) !== normalizeName(row.name)).length;
+  const removed = old.filter(row => !incoming.has(row.student_code));
+  return { ...parsed, changes: { existing: old.length, incoming: parsed.rows.length,
+    added, changed, removed: removed.length,
+    removedCodes: removed.slice(0, 20).map(row => row.student_code) } };
+}
+
+function csvRows(text) {
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (quoted) {
+      if (char === '"' && text[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"' && cell === "") quoted = true;
+    else if (char === ",") { row.push(cell); cell = ""; }
+    else if (char === "\n" || char === "\r") {
+      if (char === "\r" && text[i + 1] === "\n") i += 1;
+      row.push(cell); cell = "";
+      if (row.some(value => value.trim())) rows.push(row);
+      row = [];
+    } else cell += char;
+  }
+  if (quoted) throw Error("CSVの引用符が閉じられていません");
+  row.push(cell);
+  if (row.some(value => value.trim())) rows.push(row);
+  return rows;
+}
+
+function readRosterFile() {
+  const filename = path.join(__dirname, "meibo.csv");
+  if (!fs.existsSync(filename)) throw Error("C:\\cbt\\meibo.csv が見つかりません");
+  const buffer = fs.readFileSync(filename);
+  if (buffer.length > 1024 * 1024) throw Error("名簿CSVが大きすぎます（上限1MB）");
+  let contents;
+  try { contents = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+  catch { contents = new TextDecoder("shift_jis", { fatal: true }).decode(buffer); }
+  const records = csvRows(contents.replace(/^\uFEFF/, ""));
+  if (!records.length) throw Error("名簿CSVにデータがありません");
+  const header = records[0].map(value => value.normalize("NFKC").trim().replace(/[\s\u3000]+/g, ""));
+  let codeIndex = header.findIndex(value => /^(受験番号|生徒番号|4桁番号)$/.test(value));
+  let nameIndex = header.findIndex(value => /^(氏名|名前|生徒氏名)$/.test(value));
+  let startIndex = 1;
+  if (codeIndex < 0 || nameIndex < 0) {
+    if (/^[1-3][1-9]\d{2}$/.test(records[0][0]?.normalize("NFKC").trim()) && records[0].length >= 2) {
+      codeIndex = 0; nameIndex = 1; startIndex = 0;
+    } else throw Error("CSVの見出しは「受験番号,氏名」にしてください");
+  }
+  const rows = records.slice(startIndex).map((fields, index) => ({
+    code: fields[codeIndex] ?? "", name: fields[nameIndex] ?? "",
+    line: index + startIndex + 1
+  }));
+  return { rows, fileHash: crypto.createHash("sha256").update(buffer).digest("hex") };
+}
+
+app.get("/api/roster/preview-file", requireTeacherPC, (req, res) => {
+  try {
+    const file = readRosterFile();
+    const preview = rosterPreview({ ...req.query, rows: file.rows });
+    res.set("Cache-Control", "no-store");
+    res.json({ success: !preview.errors.length, errors: preview.errors,
+      changes: preview.changes, otherGrades: preview.otherGrades, fileHash: file.fileHash });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+const replaceRoster = db.transaction((year, grade, rows) => {
+  deleteRosterForGrade.run(year, grade);
+  for (const row of rows) insertRoster.run(year, grade, row.code, row.name);
+});
+
+async function createBackup() {
+  const directory = path.join(__dirname, "backups");
+  fs.mkdirSync(directory, { recursive: true });
+  const filename = `pycbt-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.db`;
+  await db.backup(path.join(directory, filename));
+  return { directory, filename };
+}
+
+app.post("/api/roster/import-file", requireTeacherPC, async (req, res) => {
+  try {
+    const file = readRosterFile();
+    const preview = rosterPreview({ ...req.body, rows: file.rows });
+    if (preview.errors.length) return res.status(400).json({ success: false, errors: preview.errors });
+    if (req.body.fileHash !== file.fileHash) {
+      return res.status(409).json({ success: false, message: "プレビュー後に meibo.csv が変わりました。再確認してください" });
+    }
+    if (Number(req.body.expectedExisting) !== preview.changes.existing) {
+      return res.status(409).json({ success: false, message: "プレビュー後に名簿が変わりました。再確認してください" });
+    }
+    const backup = await createBackup();
+    replaceRoster(preview.year, preview.grade, preview.rows);
+    res.json({ success: true, year: preview.year, grade: preview.grade,
+      count: preview.rows.length, backupFile: backup.filename });
+  } catch (error) {
+    console.error("名簿の取込に失敗しました", error);
+    res.status(500).json({ success: false, message: "名簿を取り込めませんでした" });
+  }
+});
+
+function rosterStatus(scope, examId) {
+  const roster = rosterForGrade.all(scope.year, scope.grade);
+  const records = allResults.all().map(toAdminRow).filter(row =>
+    row.exam_id === examId && row.grade === scope.grade);
+  const submissions = new Map();
+  for (const row of records) {
+    const list = submissions.get(row.student_code) || [];
+    list.push(row);
+    submissions.set(row.student_code, list);
+  }
+  const rows = roster.map(person => {
+    const attempts = submissions.get(person.student_code) || [];
+    const latest = attempts[0] || null;
+    const nameMismatch = latest ? normalizeName(latest.student_name) !== normalizeName(person.student_name) : false;
+    return { student_code: person.student_code, roster_name: person.student_name,
+      submitted_name: latest?.student_name || "", class_name: `${scope.grade}年${person.student_code[1]}組`,
+      attendance: Number(person.student_code.slice(2)), status: !latest ? "未提出" : nameMismatch ? "氏名不一致" : "提出済み",
+      attempts: attempts.length, score: latest?.score ?? null,
+      verification_status: latest?.verification_status || "",
+      submitted_at: latest?.submitted_at || "" };
+  });
+  const enrolled = new Set(roster.map(row => row.student_code));
+  const unmatched = [...submissions.values()].filter(attempts => !enrolled.has(attempts[0].student_code))
+    .map(attempts => ({ ...attempts[0], attempts: attempts.length }));
+  return { year: scope.year, grade: scope.grade, examId, registered: roster.length,
+    submitted: rows.filter(row => row.status !== "未提出").length,
+    missing: rows.filter(row => row.status === "未提出").length,
+    nameMismatches: rows.filter(row => row.status === "氏名不一致").length,
+    duplicates: rows.filter(row => row.attempts > 1).length,
+    unmatched, rows };
+}
+
+app.get("/api/roster/status", requireTeacherPC, (req, res) => {
+  try {
+    const scope = rosterScope(req.query);
+    const examId = String(req.query.exam || ACTIVE_EXAM_ID);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true, ...rosterStatus(scope, examId) });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
 app.get("/api/results", requireTeacherPC, (req, res) => {
   try {
     const rows = selectedRows(req);
@@ -220,16 +439,39 @@ app.get("/api/results.csv", requireTeacherPC, (req, res) => {
   }
 });
 
+app.get("/api/roster/status.csv", requireTeacherPC, (req, res) => {
+  try {
+    const scope = rosterScope(req.query);
+    const examId = String(req.query.exam || ACTIVE_EXAM_ID);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
+    const data = rosterStatus(scope, examId);
+    const header = ["試験ID", "年度", "学年", "受験番号", "組", "出席番号", "名簿氏名",
+      "入力氏名", "提出状況", "提出回数", "得点", "採点", "提出時刻"];
+    const lines = [header.map(csvCell).join(",")];
+    for (const row of data.rows) {
+      lines.push([examId, scope.year, scope.grade, row.student_code, row.student_code[1],
+        row.attendance, row.roster_name, row.submitted_name, row.status, row.attempts,
+        row.score ?? "", row.verification_status, row.submitted_at].map(csvCell).join(","));
+    }
+    for (const row of data.unmatched) {
+      lines.push([examId, scope.year, scope.grade, row.student_code, row.student_code[1],
+        row.attendance, "", row.student_name, "名簿外の提出", row.attempts,
+        row.score, row.verification_status, row.submitted_at].map(csvCell).join(","));
+    }
+    res.set({ "Cache-Control": "no-store", "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="pycbt-roster-${scope.year}-grade${scope.grade}.csv"` });
+    res.send("\uFEFF" + lines.join("\r\n") + "\r\n");
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 // SQLiteのオンラインバックアップ。WALを含む一貫した .db を作成してダウンロードする。
 app.get("/api/backup", requireTeacherPC, async (_req, res) => {
-  const directory = path.join(__dirname, "backups");
-  const filename = `pycbt-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.db`;
-  const destination = path.join(directory, filename);
   try {
-    fs.mkdirSync(directory, { recursive: true });
-    await db.backup(destination);
+    const { directory, filename } = await createBackup();
     res.set("Cache-Control", "no-store");
-    res.download(destination, filename);
+    res.download(path.join(directory, filename), filename);
   } catch (error) {
     console.error("バックアップに失敗しました", error);
     res.status(500).json({ success: false, message: "DBのバックアップに失敗しました" });
