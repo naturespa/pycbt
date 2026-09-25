@@ -5,6 +5,7 @@
   // 校内成績収集サーバ
   // ========================================
   const LOCAL_SERVER = "http://172.17.156.65:3000";
+  const SERVER_TIMEOUT_MS = 12000;
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
@@ -95,109 +96,48 @@
     };
   }
 
-  // ========================================
-  // 試験結果を校内サーバへ送信
-  // ========================================
+  // 試験結果を校内サーバへ送信する。応答が途絶えた場合も結果画面を待たせ続けない。
   async function sendResultToServer(record) {
-
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SERVER_TIMEOUT_MS);
     try {
-
-      const response = await fetch(
-        `${LOCAL_SERVER}/api/results`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type": "application/json"
-          },
-
-          body: JSON.stringify({
-            studentCode: record.student.id,
-
-            studentName: record.student.name,
-
-            className:
-              `${record.student.grade}年${record.student.class}組`,
-
-            score:
-              record.scores.total.earned,
-
-            knowledgeScore:
-              record.scores.knowledge.earned,
-
-            thinkingScore:
-              record.scores.thinking.earned,
-
-            answers:
-              record.questions,
-
-            startedAt:
-              record.session.started_at
-          })
-        }
-      );
-
-
-      if (!response.ok) {
-
-        throw new Error(
-          `HTTP ${response.status}`
-        );
-
-      }
-
-
-      const result =
-        await response.json();
-
-
-      if (!result.success) {
-
-        throw new Error(
-          result.message || "保存に失敗しました"
-        );
-
-      }
-
-
-      console.log(
-        "校内サーバへ成績を保存しました",
-        result
-      );
-
-
-      return {
-        success: true,
-        result: result
-      };
-
-
+      const response = await fetch(`${LOCAL_SERVER}/api/results`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          studentCode: record.student.id,
+          studentName: record.student.name,
+          className: `${record.student.grade}年${record.student.class}組`,
+          score: record.scores.total.earned,
+          knowledgeScore: record.scores.knowledge.earned,
+          thinkingScore: record.scores.thinking.earned,
+          answers: record.questions,
+          startedAt: record.session.started_at
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message || "保存に失敗しました");
+      return { success: true, result };
     } catch (error) {
-
-      console.error(
-        "校内サーバへの成績送信に失敗しました",
-        error
-      );
-
-
-      return {
-        success: false,
-        error: error.message
-      };
-
+      console.error("校内サーバへの成績送信に失敗しました", error);
+      return { success: false, error: error.message };
+    } finally {
+      clearTimeout(timeout);
     }
-
   }
-  
+
   async function submit(auto = false) {
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     if ($("confirm-submit").open) $("confirm-submit").close('timeout');
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
-    const serverResult = await sendResultToServer(state.record);
+    // 通信の前に端末へ結果を残す。サーバが応答しなくてもダウンロードできる。
     setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
+    $("server-save-status").textContent = "学校サーバへ送信中です…";
     $("result-student").textContent = `${studentText(state.student)}${auto ? "（時間終了により自動提出）" : ""}`;
     $("result-time").textContent = new Date(state.record.session.submitted_at).toLocaleString("ja-JP");
     $("total-score").textContent = formatScore(stats.total.earned, stats.total.max); $("correct-count").textContent = `正答数　${stats.total.correct} / ${stats.total.count} 問`;
@@ -207,6 +147,10 @@
     const weak = [...stats.domains, stats.it].filter(s => s.max && s.earned / s.max < .7);
     $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+    const serverResult = await sendResultToServer(state.record);
+    $("server-save-status").textContent = serverResult.success
+      ? "✅ 成績を学校サーバへ保存しました。"
+      : "⚠ 学校サーバへ送信できませんでした。結果JSONをダウンロードし、画面を閉じずに先生へ知らせてください。";
   }
   $("entry-form").addEventListener("submit", event => {
     event.preventDefault(); const student = parseStudentId($("student-id").value); const name = $("student-name").value.trim();
