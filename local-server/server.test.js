@@ -14,6 +14,8 @@ const saved = [{ id: 1, student_code: "1215", student_name: "旧データ", clas
   exam_id: "legacy", verification_status: "legacy_unverified" }];
 const migrations = [];
 const roster = [];
+const archives = [];
+let backupFails = false;
 const app = { disable() {}, use() {}, listen(_port, _host, callback) { callback(); } };
 for (const method of ["get", "post", "options"]) {
   app[method] = (route, ...handlers) => routes.set(`${method.toUpperCase()} ${route}`, handlers);
@@ -25,9 +27,41 @@ class Database {
     "class_name", "score", "knowledge_score", "thinking_score", "answers", "started_at",
     "submitted_at"].map(name => ({ name })); }
   exec(sql) { if (sql.startsWith("ALTER TABLE")) migrations.push(sql); }
-  backup() { return Promise.resolve(); }
+  backup() { return backupFails ? Promise.reject(Error("backup failed")) : Promise.resolve(); }
   transaction(fn) { return (...args) => fn(...args); }
   prepare(sql) {
+    if (sql.includes("INSERT INTO deleted_results")) return { run(id, examId, code, name, submitted, recordJson, backupFile) {
+      const archive_id = archives.length + 1;
+      archives.push({ archive_id, result_id: id, exam_id: examId, student_code: code,
+        student_name: name, submitted_at: submitted, record_json: recordJson,
+        delete_backup_file: backupFile, deleted_at: "2026-09-25 03:00:00", restored_at: null });
+      return { lastInsertRowid: archive_id };
+    } };
+    if (sql.includes("FROM deleted_results ORDER BY")) return { all() {
+      return archives.slice().reverse().map(({ record_json, ...visible }) => visible);
+    } };
+    if (sql.includes("FROM deleted_results WHERE archive_id")) return { get(id) {
+      return archives.find(row => row.archive_id === id);
+    } };
+    if (sql.includes("started_at IS ?")) return { get(examId, code, started) {
+      return saved.find(row => row.exam_id === examId && row.student_code === code &&
+        row.started_at === started);
+    } };
+    if (sql.includes("UPDATE deleted_results SET restored_at")) return { run(backupFile, id) {
+      const entry = archives.find(row => row.archive_id === id && !row.restored_at);
+      if (entry) { entry.restore_backup_file = backupFile; entry.restored_at = "2026-09-25 04:00:00"; }
+      return { changes: entry ? 1 : 0 };
+    } };
+    if (sql.includes("INSERT INTO exam_results") && sql.includes("(id, student_code")) return { run(id, code, name,
+      className, score, knowledge, thinking, answers, started, submitted, examId, version,
+      status, clientScore, mismatch) {
+      saved.push({ id, student_code: code, student_name: name, class_name: className,
+        score, knowledge_score: knowledge, thinking_score: thinking, answers,
+        started_at: started, submitted_at: submitted, exam_id: examId,
+        pool_version: version, verification_status: status,
+        client_score: clientScore, score_mismatch: mismatch });
+      return { changes: 1 };
+    } };
     if (sql.includes("DELETE FROM exam_results")) return { run(id, examId, code, submitted) {
       const index = saved.findIndex(row => row.id === id && row.exam_id === examId &&
         row.student_code === code && row.submitted_at === submitted);
@@ -73,7 +107,7 @@ function fakeRequire(name) {
   return require(name);
 }
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, "server.js"), "utf8"), {
-  require: fakeRequire, __dirname, process, console: { log() {}, error: console.error },
+  require: fakeRequire, __dirname, process, console: { log() {}, error() {} },
   Date, Number, String, JSON, Object, Set, Array, RegExp
 });
 
@@ -205,12 +239,66 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
       origin: "http://localhost:3000", body: deleteBody });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(deletion.body.success, true);
+    assert.equal(deletion.body.archiveId, 1);
     assert.ok(deletion.body.backupFile.endsWith(".db"));
     assert.equal(saved.length, 1);
     assert.equal(saved[0].id, 1);
     assert.equal(roster.length, 3);
+    const history = request("GET", "/api/results/deletions").body.history;
+    assert.equal(history.length, 1);
+    assert.equal(history[0].result_id, 2);
+    assert.equal(history[0].record_json, undefined, "解答内容は履歴APIに出さない");
+    assert.equal(request("GET", "/api/results/deletions", { address: "192.0.2.10" }).statusCode, 403);
     assert.equal(request("POST", "/api/results/delete", {
       origin: "http://localhost:3000", body: deleteBody }).statusCode, 409);
+    saved.push({ ...target, id: 3, student_code: "1218", student_name: "削除後の新しい提出" });
+    const restoreBody = { archiveId: deletion.body.archiveId, resultId: 2 };
+    assert.equal(request("POST", "/api/results/restore", {
+      origin: "https://other.example", body: restoreBody }).statusCode, 403);
+    assert.equal(request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: { ...restoreBody, resultId: 3 } }).statusCode, 409);
+    assert.equal(saved.length, 2);
+    saved.push({ ...target, id: 4 });
+    assert.equal(request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: restoreBody }).statusCode, 409);
+    saved.pop();
+    backupFails = true;
+    const failedRestore = request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: restoreBody });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(failedRestore.statusCode, 500);
+    assert.equal(saved.length, 2);
+    assert.equal(archives[0].restored_at, null);
+    backupFails = false;
+    const restored = request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: restoreBody });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(restored.body.success, true);
+    assert.deepEqual(saved.map(row => row.id).sort(), [1, 2, 3]);
+    assert.equal(saved.find(row => row.id === 2).score, 100);
+    assert.equal(saved.find(row => row.id === 2).answers, target.answers);
+    assert.ok(request("GET", "/api/results/deletions").body.history[0].restored_at);
+    assert.equal(request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: restoreBody }).statusCode, 409);
+    backupFails = true;
+    const failedDeletion = request("POST", "/api/results/delete", {
+      origin: "http://localhost:3000", body: deleteBody });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(failedDeletion.statusCode, 500);
+    assert.equal(saved.length, 3);
+    assert.equal(archives.length, 1);
+    backupFails = false;
+    saved.find(row => row.id === 1).submitted_at = null;
+    const legacyBody = { id: 1, examId: "legacy", studentCode: "1215", submittedAt: null };
+    const legacyDeletion = request("POST", "/api/results/delete", {
+      origin: "http://localhost:3000", body: legacyBody });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(legacyDeletion.body.success, true);
+    const legacyRestore = request("POST", "/api/results/restore", {
+      origin: "http://localhost:3000", body: { archiveId: legacyDeletion.body.archiveId, resultId: 1 } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(legacyRestore.body.success, true);
+    assert.equal(saved.find(row => row.id === 1).submitted_at, null);
     console.log("server.test.js: OK");
   } finally {
     fs.unlinkSync(rosterFile);

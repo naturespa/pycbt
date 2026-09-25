@@ -23,8 +23,8 @@
     button.danger { background: #a11f2a; border-color: #a11f2a; padding: 5px 10px; }
     button.danger:hover { background: #7b1821; }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    .roster { margin-top: 20px; }
-    .roster h2 { margin: 0 0 14px; }
+    .roster, .history { margin-top: 20px; }
+    .roster h2, .history h2 { margin: 0 0 14px; }
     .error { color: #a11f2a; font-weight: 700; }
     #summary { margin: 18px 0 0; font-weight: 700; }
     #status { margin: 8px 0 0; min-height: 1.4em; }
@@ -59,7 +59,18 @@
           <tbody id="results"></tbody>
         </table>
       </div>
-      <p class="note">通常は、試験ごとに受験番号の最新記録を表示します。再受験の記録を確認する際はチェックを外してください。「従来記録」はサーバ採点導入前の記録です。各行の「削除」は記録IDの1件だけを削除し、先に先生PCの <code>C:\cbt\backups</code> にDBバックアップを作成します。</p>
+      <p class="note">通常は、試験ごとに受験番号の最新記録を表示します。再受験の記録を確認する際はチェックを外してください。「従来記録」はサーバ採点導入前の記録です。各行の「削除」は記録IDの1件を成績一覧から外し、校内DB内の削除履歴に保存します。削除・復元の前に <code>C:\cbt\backups</code> にDBバックアップを作成します。</p>
+    </section>
+    <section class="panel history">
+      <h2>削除履歴・復元</h2>
+      <p class="note">削除履歴を表示します。復元すると記録IDと採点結果を元のまま成績一覧へ戻します。履歴は復元後も残ります。</p>
+      <p id="history-message" role="status" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状態</th><th>試験ID</th><th>受験番号</th><th>氏名</th><th>記録ID</th><th>提出時刻</th><th>削除時刻</th><th>復元時刻</th><th>操作</th></tr></thead>
+          <tbody id="history-results"></tbody>
+        </table>
+      </div>
     </section>
     <section class="panel roster">
       <h2>名簿照合</h2>
@@ -175,6 +186,7 @@
         $("status").textContent = `更新しました（${new Date().toLocaleTimeString("ja-JP")}）`;
         render();
         await loadRosterStatus();
+        await loadDeletionHistory();
       } catch (error) {
         $("status").className = "error";
         $("status").textContent = `読み込みに失敗しました：${error.message}`;
@@ -196,7 +208,7 @@
       return data;
     }
     async function removeResult(row, button) {
-      if (!window.confirm(`試験 ${row.exam_id}／受験番号 ${row.student_code}／${row.student_name}／記録ID ${row.id} の1件を削除します。続けますか？`)) return;
+      if (!window.confirm(`試験 ${row.exam_id}／受験番号 ${row.student_code}／${row.student_name}／記録ID ${row.id} の1件を成績一覧から削除し、復元用の履歴に保存します。続けますか？`)) return;
       button.disabled = true;
       $("status").className = "";
       $("status").textContent = `記録ID ${row.id} の削除前バックアップを作成中…`;
@@ -211,6 +223,63 @@
         button.disabled = false;
         $("status").className = "error";
         $("status").textContent = `削除に失敗しました：${error.message}`;
+      }
+    }
+    async function loadDeletionHistory() {
+      const tbody = $("history-results");
+      try {
+        const data = await apiJson("/api/results/deletions");
+        $("history-message").className = "";
+        $("history-message").textContent = "";
+        tbody.replaceChildren();
+        for (const row of data.history) {
+          const tr = document.createElement("tr");
+          const cells = [row.restored_at ? "復元済み" : "削除中", row.exam_id,
+            row.student_code, row.student_name, row.result_id,
+            timestamp(row.submitted_at), timestamp(row.deleted_at), timestamp(row.restored_at)];
+          for (const value of cells) {
+            const td = document.createElement("td");
+            td.textContent = value ?? "";
+            tr.appendChild(td);
+          }
+          const td = document.createElement("td");
+          if (!row.restored_at) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = "復元";
+            button.addEventListener("click", () => restoreResult(row, button));
+            td.appendChild(button);
+          }
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+        if (!data.history.length) {
+          const tr = document.createElement("tr"), td = document.createElement("td");
+          td.colSpan = 9;
+          td.textContent = "削除履歴はありません。";
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+      } catch (error) {
+        $("history-message").className = "error";
+        $("history-message").textContent = `削除履歴を取得できませんでした：${error.message}`;
+      }
+    }
+    async function restoreResult(row, button) {
+      if (!window.confirm(`試験 ${row.exam_id}／受験番号 ${row.student_code}／記録ID ${row.result_id} の記録を復元します。続けますか？`)) return;
+      button.disabled = true;
+      $("history-message").className = "";
+      $("history-message").textContent = "復元前バックアップを作成中…";
+      try {
+        const result = await apiJson("/api/results/restore", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveId: row.archive_id, resultId: row.result_id }) });
+        await reload();
+        $("history-message").textContent = `記録ID ${result.restoredId} を復元しました。復元前のDBバックアップ：C:\\cbt\\backups\\${result.backupFile}`;
+      } catch (error) {
+        button.disabled = false;
+        $("history-message").className = "error";
+        $("history-message").textContent = `復元に失敗しました：${error.message}`;
       }
     }
     async function loadRosterStatus() {

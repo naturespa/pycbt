@@ -47,6 +47,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_roster_year_grade
     ON student_roster(academic_year, grade);
+  CREATE TABLE IF NOT EXISTS deleted_results (
+    archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id INTEGER NOT NULL,
+    exam_id TEXT NOT NULL,
+    student_code TEXT NOT NULL,
+    student_name TEXT NOT NULL,
+    submitted_at TEXT,
+    record_json TEXT NOT NULL,
+    deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delete_backup_file TEXT NOT NULL,
+    restored_at TEXT,
+    restore_backup_file TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_deleted_results_id ON deleted_results(result_id);
 `);
 // 旧表を破棄しない移行。以前の記録は「従来記録／未検証」として残る。
 const existingColumns = new Set(db.pragma("table_info(exam_results)").map(column => column.name));
@@ -79,12 +93,38 @@ const allResults = db.prepare(`
   FROM exam_results ORDER BY id DESC
 `);
 const resultById = db.prepare(`
-  SELECT id, exam_id, student_code, student_name, submitted_at
+  SELECT *
   FROM exam_results WHERE id = ?
 `);
 const deleteResult = db.prepare(`
   DELETE FROM exam_results
-  WHERE id = ? AND exam_id = ? AND student_code = ? AND submitted_at = ?
+  WHERE id = ? AND exam_id = ? AND student_code = ? AND submitted_at IS ?
+`);
+const insertDeletionHistory = db.prepare(`
+  INSERT INTO deleted_results
+    (result_id, exam_id, student_code, student_name, submitted_at, record_json, delete_backup_file)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+`);
+const deletionHistory = db.prepare(`
+  SELECT archive_id, result_id, exam_id, student_code, student_name, submitted_at,
+         deleted_at, delete_backup_file, restored_at, restore_backup_file
+  FROM deleted_results ORDER BY archive_id DESC
+`);
+const deletedByArchiveId = db.prepare(`SELECT * FROM deleted_results WHERE archive_id = ?`);
+const restoreConflict = db.prepare(`
+  SELECT id FROM exam_results
+  WHERE exam_id = ? AND student_code = ? AND started_at IS ? LIMIT 1
+`);
+const insertRestoredResult = db.prepare(`
+  INSERT INTO exam_results
+    (id, student_code, student_name, class_name, score, knowledge_score,
+     thinking_score, answers, started_at, submitted_at, exam_id,
+     pool_version, verification_status, client_score, score_mismatch)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const markRestored = db.prepare(`
+  UPDATE deleted_results SET restored_at = CURRENT_TIMESTAMP, restore_backup_file = ?
+  WHERE archive_id = ? AND restored_at IS NULL
 `);
 const rosterForGrade = db.prepare(`
   SELECT student_code, student_name, imported_at FROM student_roster
@@ -337,20 +377,35 @@ const replaceRoster = db.transaction((year, grade, rows) => {
 async function createBackup() {
   const directory = path.join(__dirname, "backups");
   fs.mkdirSync(directory, { recursive: true });
-  const filename = `pycbt-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.db`;
+  const filename = `pycbt-backup-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomBytes(3).toString("hex")}.db`;
   await db.backup(path.join(directory, filename));
   return { directory, filename };
 }
 
-// 削除対象は画面で確認した1件に限定し、DBのスナップショットを先に作る。
-app.post("/api/results/delete", requireTeacherPC, async (req, res) => {
+function requireAdminOrigin(req, res, next) {
   const origin = req.get("Origin");
   if (origin !== `http://localhost:${PORT}` && origin !== `http://127.0.0.1:${PORT}`) {
     return res.status(403).json({ success: false, message: "管理画面から操作してください" });
   }
+  next();
+}
+
+const archiveAndDelete = db.transaction((record, backupFile) => {
+  const current = resultById.get(record.id);
+  if (!current || current.exam_id !== record.exam_id || current.student_code !== record.student_code ||
+      current.submitted_at !== record.submitted_at) throw Error("対象の記録が変わりました");
+  const archived = insertDeletionHistory.run(current.id, current.exam_id, current.student_code,
+    current.student_name, current.submitted_at, JSON.stringify(current), backupFile);
+  const deleted = deleteResult.run(current.id, current.exam_id, current.student_code, current.submitted_at);
+  if (deleted.changes !== 1) throw Error("対象の記録が変わりました");
+  return Number(archived.lastInsertRowid);
+});
+
+// 削除対象は画面で確認した1件に限定し、DBのスナップショットを先に作る。
+app.post("/api/results/delete", requireTeacherPC, requireAdminOrigin, async (req, res) => {
   const { id, examId, studentCode, submittedAt } = req.body || {};
   if (!Number.isSafeInteger(id) || id < 1 || typeof examId !== "string" ||
-      typeof studentCode !== "string" || typeof submittedAt !== "string") {
+      typeof studentCode !== "string" || (submittedAt !== null && typeof submittedAt !== "string")) {
     return res.status(400).json({ success: false, message: "削除対象の指定が不正です" });
   }
   try {
@@ -360,15 +415,66 @@ app.post("/api/results/delete", requireTeacherPC, async (req, res) => {
       return res.status(409).json({ success: false, message: "対象の記録が変わりました。画面を再読み込みしてください" });
     }
     const backup = await createBackup();
-    const deleted = deleteResult.run(id, examId, studentCode, submittedAt);
-    if (deleted.changes !== 1) {
-      return res.status(409).json({ success: false, message: "対象の記録が変わりました。画面を再読み込みしてください" });
-    }
+    const archiveId = archiveAndDelete(record, backup.filename);
     console.log(`[DELETE] 記録ID ${id}／試験ID ${examId}／受験番号 ${studentCode}（削除前バックアップ ${backup.filename}）`);
-    res.json({ success: true, deletedId: id, backupFile: backup.filename });
+    res.json({ success: true, deletedId: id, archiveId, backupFile: backup.filename });
   } catch (error) {
     console.error("成績削除に失敗しました", error);
     res.status(500).json({ success: false, message: "削除できませんでした。記録は保持されています" });
+  }
+});
+
+app.get("/api/results/deletions", requireTeacherPC, (_req, res) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true, history: deletionHistory.all() });
+  } catch (error) {
+    console.error("削除履歴を取得できませんでした", error);
+    res.status(500).json({ success: false, message: "削除履歴を取得できませんでした" });
+  }
+});
+
+const restoreOne = db.transaction((history, backupFile) => {
+  const entry = deletedByArchiveId.get(history.archive_id);
+  if (!entry || entry.restored_at || resultById.get(entry.result_id)) throw Error("復元対象が変わりました");
+  const record = JSON.parse(entry.record_json);
+  if (record.id !== entry.result_id || record.exam_id !== entry.exam_id ||
+      record.student_code !== entry.student_code) throw Error("削除履歴が不正です");
+  if (restoreConflict.get(record.exam_id, record.student_code, record.started_at)) {
+    throw Error("同じ提出がすでに保存されています");
+  }
+  insertRestoredResult.run(record.id, record.student_code, record.student_name,
+    record.class_name ?? null, record.score, record.knowledge_score, record.thinking_score,
+    record.answers ?? null, record.started_at ?? null, record.submitted_at ?? null, record.exam_id,
+    record.pool_version ?? null, record.verification_status, record.client_score ?? null,
+    record.score_mismatch ?? null);
+  const updated = markRestored.run(backupFile, entry.archive_id);
+  if (updated.changes !== 1) throw Error("復元対象が変わりました");
+  return record.id;
+});
+
+app.post("/api/results/restore", requireTeacherPC, requireAdminOrigin, async (req, res) => {
+  const archiveId = req.body?.archiveId;
+  const resultId = req.body?.resultId;
+  if (!Number.isSafeInteger(archiveId) || archiveId < 1 || !Number.isSafeInteger(resultId) || resultId < 1) {
+    return res.status(400).json({ success: false, message: "復元対象の指定が不正です" });
+  }
+  try {
+    const entry = deletedByArchiveId.get(archiveId);
+    if (!entry || entry.result_id !== resultId || entry.restored_at || resultById.get(resultId)) {
+      return res.status(409).json({ success: false, message: "対象の状態が変わりました。画面を再読み込みしてください" });
+    }
+    const original = JSON.parse(entry.record_json);
+    if (restoreConflict.get(original.exam_id, original.student_code, original.started_at)) {
+      return res.status(409).json({ success: false, message: "同じ提出がすでに保存されています" });
+    }
+    const backup = await createBackup();
+    restoreOne(entry, backup.filename);
+    console.log(`[RESTORE] 削除履歴 ${archiveId}／記録ID ${resultId}（復元前バックアップ ${backup.filename}）`);
+    res.json({ success: true, restoredId: resultId, backupFile: backup.filename });
+  } catch (error) {
+    console.error("成績復元に失敗しました", error);
+    res.status(500).json({ success: false, message: "復元できませんでした。削除履歴を確認してください" });
   }
 });
 
