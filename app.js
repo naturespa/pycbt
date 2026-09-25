@@ -1,7 +1,13 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  // 本番試験の前に local-server/server.js の ACTIVE_EXAM_ID と同じ値へ変更する。
-  const EXAM_ID = "Practice-2026-09-25test";
+  // 試験IDは配布URLの ?exam= から受け取る。
+  // パラメータが無い従来URLは DEFAULT_EXAM_ID を使うため、いつでも旧運用へ戻せる。
+  const DEFAULT_EXAM_ID = "Practice-2026-09-25test";
+  const EXAM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+  const requestedExamId = new URLSearchParams(location.search).get("exam");
+  const EXAM_ID = requestedExamId && EXAM_ID_PATTERN.test(requestedExamId)
+    ? requestedExamId
+    : DEFAULT_EXAM_ID;
   const STORAGE_PREFIX = `pycbt:v2:${EXAM_ID}:`;
   // 校内サーバのアドレスは各受験端末で入力し、その端末内にだけ保存する。
   const SERVER_IP_KEY = "pycbt:server-ip";
