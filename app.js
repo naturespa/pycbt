@@ -1,6 +1,10 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const STORAGE_PREFIX = "pycbt:v1:";
+   // ========================================
+  // 校内成績収集サーバ
+  // ========================================
+  const LOCAL_SERVER = "http://172.17.156.65:3000";
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
@@ -90,11 +94,107 @@
       questions: results.map(q => ({ question_id: q.id, base_question_id: q.base_question_id || q.id, variant_group: q.variant_group, variant_id: q.variant_id, render_type: q.render_type, visual_type: q.visual_type, domain: q.domain, viewpoint: q.viewpoint, format: q.format, skill: q.skill, paiza_chapter: q.paiza_chapter, curriculum_ref: q.curriculum_ref, source_type: q.source_type, source_year: q.source_year, source_period: q.source_period, source_question_no: q.source_question_no, source_label: q.source_label, source_url: q.source_url, source_answer_url: q.source_answer_url, source_modified: q.source_modified, source_supplemental_visual: q.source_supplemental_visual, response: q.response, correct: q.correct, points: q.points, earned: q.earned }))
     };
   }
+
+  // ========================================
+  // 試験結果を校内サーバへ送信
+  // ========================================
+  async function sendResultToServer(record) {
+
+    try {
+
+      const response = await fetch(
+        `${LOCAL_SERVER}/api/results`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json"
+          },
+
+          body: JSON.stringify({
+            studentCode: record.student.id,
+
+            studentName: record.student.name,
+
+            className:
+              `${record.student.grade}年${record.student.class}組`,
+
+            score:
+              record.scores.total.earned,
+
+            knowledgeScore:
+              record.scores.knowledge.earned,
+
+            thinkingScore:
+              record.scores.thinking.earned,
+
+            answers:
+              record.questions,
+
+            startedAt:
+              record.session.started_at
+          })
+        }
+      );
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          `HTTP ${response.status}`
+        );
+
+      }
+
+
+      const result =
+        await response.json();
+
+
+      if (!result.success) {
+
+        throw new Error(
+          result.message || "保存に失敗しました"
+        );
+
+      }
+
+
+      console.log(
+        "校内サーバへ成績を保存しました",
+        result
+      );
+
+
+      return {
+        success: true,
+        result: result
+      };
+
+
+    } catch (error) {
+
+      console.error(
+        "校内サーバへの成績送信に失敗しました",
+        error
+      );
+
+
+      return {
+        success: false,
+        error: error.message
+      };
+
+    }
+
+  }
+  
   async function submit(auto = false) {
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     if ($("confirm-submit").open) $("confirm-submit").close('timeout');
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
+    const serverResult = await sendResultToServer(state.record);
     setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
     localStorage.removeItem(activeKey(state.student.id)); setLocal(completedKey(state.student.id), { submitted_at: state.record.session.submitted_at, total: stats.total.earned });
     $("exam-screen").hidden = true; $("result-screen").hidden = false;
