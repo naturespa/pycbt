@@ -16,15 +16,18 @@
     .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
     label { display: grid; gap: 5px; font-weight: 700; }
     label.inline { display: flex; align-items: center; gap: 8px; padding-bottom: 9px; }
-    select, input[type=number], button, a.button { font: inherit; border-radius: 7px; padding: 10px 12px; }
-    select, input[type=number] { border: 1px solid #899cb7; background: white; min-width: 110px; }
+    select, input[type=number], input[type=text], button, a.button { font: inherit; border-radius: 7px; padding: 10px 12px; }
+    select, input[type=number], input[type=text] { border: 1px solid #899cb7; background: white; min-width: 110px; }
+    #active-exam-id { min-width: 260px; }
+    #student-url { min-width: min(520px, 72vw); }
     button, a.button { border: 1px solid #204f8e; background: #204f8e; color: white; cursor: pointer; text-decoration: none; }
     button:hover, a.button:hover { background: #163d71; }
     button.danger { background: #a11f2a; border-color: #a11f2a; padding: 5px 10px; }
     button.danger:hover { background: #7b1821; }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    .roster, .history { margin-top: 20px; }
-    .roster h2, .history h2 { margin: 0 0 14px; }
+    .exam-settings, .roster, .history { margin-top: 20px; }
+    .exam-settings { margin-top: 0; }
+    .exam-settings h2, .roster h2, .history h2 { margin: 0 0 14px; }
     .error { color: #a11f2a; font-weight: 700; }
     #summary { margin: 18px 0 0; font-weight: 700; }
     #status { margin: 8px 0 0; min-height: 1.4em; }
@@ -42,6 +45,22 @@
 <body>
   <header><h1>pycbt 成績管理</h1><p>先生PC専用・校内サーバに保存した提出記録</p></header>
   <main>
+    <section class="panel exam-settings">
+      <h2>試験ID設定</h2>
+      <div class="toolbar">
+        <label>現在の試験ID
+          <input id="active-exam-id" type="text" maxlength="64" autocomplete="off" spellcheck="false">
+        </label>
+        <button id="save-exam-id" type="button">試験IDを変更</button>
+        <label>生徒用URL
+          <input id="student-url" type="text" readonly>
+        </label>
+        <button id="copy-student-url" type="button">URLをコピー</button>
+      </div>
+      <p id="exam-setting-message" role="status" aria-live="polite"></p>
+      <p class="note">試験IDを変更すると、生徒用URLも自動で切り替わります。GitHub側のファイル編集は不要です。従来のURL（<code>?exam=</code>なし）は固定IDで引き続き利用できます。</p>
+    </section>
+
     <section class="panel">
       <div class="toolbar">
         <label>試験 <select id="exam-filter"><option value="">全試験</option></select></label>
@@ -207,6 +226,66 @@
       if (!response.ok || !data.success) throw new Error(data.message || data.errors?.join("／") || `HTTP ${response.status}`);
       return data;
     }
+
+    async function loadExamSettings() {
+      try {
+        const data = await apiJson("/api/settings/exam-id");
+        activeExamId = data.examId;
+        $("active-exam-id").value = data.examId;
+        $("student-url").value = data.studentUrl;
+        $("save-exam-id").disabled = !data.managed;
+        $("exam-setting-message").className = "";
+        $("exam-setting-message").textContent = data.managed
+          ? "この試験IDで受験結果を受け付けます。"
+          : `固定試験IDモードです（${data.defaultExamId}）。`;
+      } catch (error) {
+        $("exam-setting-message").className = "error";
+        $("exam-setting-message").textContent = `試験ID設定を取得できません：${error.message}`;
+      }
+    }
+
+    async function saveExamSettings() {
+      const examId = $("active-exam-id").value.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) {
+        $("exam-setting-message").className = "error";
+        $("exam-setting-message").textContent = "試験IDは英数字・ピリオド・アンダースコア・ハイフンで64文字以内にしてください。";
+        return;
+      }
+      if (!window.confirm(`現在の試験IDを「${examId}」へ変更します。受験中の生徒がいないことを確認してください。続けますか？`)) return;
+      $("save-exam-id").disabled = true;
+      $("exam-setting-message").className = "";
+      $("exam-setting-message").textContent = "試験IDを変更しています…";
+      try {
+        const data = await apiJson("/api/settings/exam-id", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ examId })
+        });
+        activeExamId = data.examId;
+        $("active-exam-id").value = data.examId;
+        $("student-url").value = data.studentUrl;
+        $("exam-setting-message").textContent = `試験IDを「${data.examId}」へ変更しました。生徒用URLを配布してください。`;
+        await reload();
+      } catch (error) {
+        $("exam-setting-message").className = "error";
+        $("exam-setting-message").textContent = `変更に失敗しました：${error.message}`;
+      } finally {
+        $("save-exam-id").disabled = false;
+      }
+    }
+
+    async function copyStudentUrl() {
+      const url = $("student-url").value;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        $("student-url").select();
+        document.execCommand("copy");
+      }
+      $("exam-setting-message").className = "";
+      $("exam-setting-message").textContent = "生徒用URLをコピーしました。";
+    }
     async function removeResult(row, button) {
       if (!window.confirm(`試験 ${row.exam_id}／受験番号 ${row.student_code}／${row.student_name}／記録ID ${row.id} の1件を成績一覧から削除し、復元用の履歴に保存します。続けますか？`)) return;
       button.disabled = true;
@@ -359,6 +438,8 @@
         $("roster-message").textContent = `取込に失敗しました：${error.message}。CSVを再確認してください。`;
       }
     }
+    $("save-exam-id").addEventListener("click", saveExamSettings);
+    $("copy-student-url").addEventListener("click", copyStudentUrl);
     $("exam-filter").addEventListener("change", () => { render(); loadRosterStatus(); });
     $("class-filter").addEventListener("change", render);
     $("latest-only").addEventListener("change", render);
@@ -367,7 +448,7 @@
     $("roster-grade").addEventListener("change", () => { invalidatePreview(); loadRosterStatus(); });
     $("roster-preview").addEventListener("click", previewRoster);
     $("roster-import").addEventListener("click", importRoster);
-    reload();
+    loadExamSettings().finally(reload);
   </script>
 </body>
 </html>
