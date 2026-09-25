@@ -14,7 +14,11 @@ const { scoreExam, poolVersion } = require("./scoring");
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const PAGE_ORIGIN = "https://naturespa.github.io";
-const ACTIVE_EXAM_ID = "practice-2026-09-25";
+const PUBLIC_EXAM_URL = "https://naturespa.github.io/pycbt/";
+const DEFAULT_ACTIVE_EXAM_ID = "Practice-2026-09-25test";
+// false にして再起動すると、管理画面設定を使わず固定IDへ即座に戻せる。
+const MANAGED_EXAM_ID_ENABLED = true;
+const EXAM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const db = new Database(path.join(__dirname, "pycbt.db"));
 db.pragma("journal_mode = WAL");
 db.pragma("busy_timeout = 5000");
@@ -61,7 +65,44 @@ db.exec(`
     restore_backup_file TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_deleted_results_id ON deleted_results(result_id);
+  CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+const getSetting = db.prepare(`SELECT setting_value FROM app_settings WHERE setting_key = ?`);
+const seedSetting = db.prepare(`
+  INSERT OR IGNORE INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+`);
+const saveSetting = db.prepare(`
+  INSERT INTO app_settings (setting_key, setting_value, updated_at)
+  VALUES (?, ?, CURRENT_TIMESTAMP)
+  ON CONFLICT(setting_key) DO UPDATE SET
+    setting_value = excluded.setting_value,
+    updated_at = CURRENT_TIMESTAMP
+`);
+seedSetting.run("active_exam_id", DEFAULT_ACTIVE_EXAM_ID);
+
+function getActiveExamId() {
+  if (!MANAGED_EXAM_ID_ENABLED) return DEFAULT_ACTIVE_EXAM_ID;
+  const value = String(getSetting.get("active_exam_id")?.setting_value || "").trim();
+  return EXAM_ID_PATTERN.test(value) ? value : DEFAULT_ACTIVE_EXAM_ID;
+}
+
+function setActiveExamId(value) {
+  const examId = String(value || "").trim();
+  if (!EXAM_ID_PATTERN.test(examId)) {
+    throw new Error("試験IDは英数字・ピリオド・アンダースコア・ハイフンで64文字以内にしてください");
+  }
+  saveSetting.run("active_exam_id", examId);
+  return examId;
+}
+
+function studentExamUrl(examId = getActiveExamId()) {
+  return `${PUBLIC_EXAM_URL}?exam=${encodeURIComponent(examId)}`;
+}
+
 // 旧表を破棄しない移行。以前の記録は「従来記録／未検証」として残る。
 const existingColumns = new Set(db.pragma("table_info(exam_results)").map(column => column.name));
 const additions = {
@@ -159,7 +200,7 @@ function allowedPage(req, res, next) {
 const pageCors = cors({ origin: PAGE_ORIGIN, methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] });
 app.get("/api/health", pageCors, (_req, res) => {
   res.json({ success: true, message: "pycbt server is running",
-    protocolVersion: 2, activeExamId: ACTIVE_EXAM_ID, poolVersion,
+    protocolVersion: 2, activeExamId: getActiveExamId(), poolVersion,
     time: new Date().toISOString() });
 });
 app.options("/api/results", allowedPage, pageCors);
@@ -178,7 +219,7 @@ app.post("/api/results", allowedPage, pageCors, (req, res) => {
     if (![score, knowledgeScore, thinkingScore].every(validScore)) {
       return res.status(400).json({ success: false, message: "得点の形式を確認してください" });
     }
-    if (examId !== ACTIVE_EXAM_ID) {
+    if (examId !== getActiveExamId()) {
       return res.status(409).json({ success: false, message: "試験IDがサーバと異なります。先生へ知らせてください" });
     }
     let verified;
@@ -390,6 +431,34 @@ function requireAdminOrigin(req, res, next) {
   next();
 }
 
+app.get("/api/settings/exam-id", requireTeacherPC, (_req, res) => {
+  const examId = getActiveExamId();
+  res.set("Cache-Control", "no-store");
+  res.json({
+    success: true,
+    managed: MANAGED_EXAM_ID_ENABLED,
+    examId,
+    defaultExamId: DEFAULT_ACTIVE_EXAM_ID,
+    studentUrl: studentExamUrl(examId)
+  });
+});
+
+app.post("/api/settings/exam-id", requireTeacherPC, requireAdminOrigin, (req, res) => {
+  if (!MANAGED_EXAM_ID_ENABLED) {
+    return res.status(409).json({
+      success: false,
+      message: "固定試験IDモードです。server.js の MANAGED_EXAM_ID_ENABLED を true にしてください"
+    });
+  }
+  try {
+    const examId = setActiveExamId(req.body?.examId);
+    console.log(`[SETTING] 試験IDを ${examId} に変更しました`);
+    res.json({ success: true, examId, studentUrl: studentExamUrl(examId) });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 const archiveAndDelete = db.transaction((record, backupFile) => {
   const current = resultById.get(record.id);
   if (!current || current.exam_id !== record.exam_id || current.student_code !== record.student_code ||
@@ -534,7 +603,7 @@ function rosterStatus(scope, examId) {
 app.get("/api/roster/status", requireTeacherPC, (req, res) => {
   try {
     const scope = rosterScope(req.query);
-    const examId = String(req.query.exam || ACTIVE_EXAM_ID);
+    const examId = String(req.query.exam || getActiveExamId());
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
     res.set("Cache-Control", "no-store");
     res.json({ success: true, ...rosterStatus(scope, examId) });
@@ -546,7 +615,7 @@ app.get("/api/results", requireTeacherPC, (req, res) => {
   try {
     const rows = selectedRows(req);
     res.set("Cache-Control", "no-store");
-    res.json({ success: true, activeExamId: ACTIVE_EXAM_ID, count: rows.length, results: rows });
+    res.json({ success: true, activeExamId: getActiveExamId(), count: rows.length, results: rows });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "成績を取得できませんでした" });
@@ -586,7 +655,7 @@ app.get("/api/results.csv", requireTeacherPC, (req, res) => {
 app.get("/api/roster/status.csv", requireTeacherPC, (req, res) => {
   try {
     const scope = rosterScope(req.query);
-    const examId = String(req.query.exam || ACTIVE_EXAM_ID);
+    const examId = String(req.query.exam || getActiveExamId());
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
     const data = rosterStatus(scope, examId);
     const header = ["試験ID", "年度", "学年", "受験番号", "組", "出席番号", "名簿氏名",
@@ -631,5 +700,5 @@ app.listen(PORT, "0.0.0.0", () => {
     }
   }
   console.log(`データベース ${path.join(__dirname, "pycbt.db")}`);
-  console.log(`試験ID ${ACTIVE_EXAM_ID}／採点マスタ ${poolVersion}`);
+  console.log(`試験ID ${getActiveExamId()}／採点マスタ ${poolVersion}`);
 });
