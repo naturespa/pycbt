@@ -15,6 +15,7 @@ const saved = [{ id: 1, student_code: "1215", student_name: "旧データ", clas
 const migrations = [];
 const roster = [];
 const archives = [];
+const settings = new Map();
 let backupFails = false;
 const app = { disable() {}, use() {}, listen(_port, _host, callback) { callback(); } };
 for (const method of ["get", "post", "options"]) {
@@ -30,6 +31,15 @@ class Database {
   backup() { return backupFails ? Promise.reject(Error("backup failed")) : Promise.resolve(); }
   transaction(fn) { return (...args) => fn(...args); }
   prepare(sql) {
+    if (sql.includes("SELECT setting_value FROM app_settings")) return { get(key) {
+      return settings.has(key) ? { setting_value: settings.get(key) } : undefined;
+    } };
+    if (sql.includes("INSERT OR IGNORE INTO app_settings")) return { run(key, value) {
+      if (!settings.has(key)) settings.set(key, value);
+    } };
+    if (sql.includes("INSERT INTO app_settings")) return { run(key, value) {
+      settings.set(key, value);
+    } };
     if (sql.includes("INSERT INTO deleted_results")) return { run(id, examId, code, name, submitted, recordJson, backupFile) {
       const archive_id = archives.length + 1;
       archives.push({ archive_id, result_id: id, exam_id: examId, student_code: code,
@@ -150,7 +160,7 @@ for (const file of ["question-bank.js", "pool/pool-ab.js", "pool/pool-cd.js", "p
 const questions = browser.window.generateExamForStudent("1215");
 const payload = { studentCode: "1215", studentName: "=SUM(1+1)", className: "9年9組",
   score: 0, knowledgeScore: 0, thinkingScore: 0,
-  examId: "practice-2026-09-25", poolVersion,
+  examId: "Practice-2026-09-25test", poolVersion,
   answers: questions.map(q => ({ question_id: q.id, response: q.answer,
     earned: 0, correct: false, points: 99 })), startedAt: "2026-09-25T02:00:00.000Z" };
 assert.equal(request("POST", "/api/results", {
@@ -207,7 +217,7 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
     assert.equal(roster.length, 3);
     assert.equal(saved.length, 2);
     const status = request("GET", "/api/roster/status", {
-      query: { year: "2026", grade: "1", exam: "practice-2026-09-25" } }).body;
+      query: { year: "2026", grade: "1", exam: payload.examId } }).body;
     assert.equal(status.registered, 2);
     assert.equal(status.submitted, 1);
     assert.equal(status.missing, 1);
@@ -299,6 +309,17 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(legacyRestore.body.success, true);
     assert.equal(saved.find(row => row.id === 1).submitted_at, null);
+    const current = request("GET", "/api/settings/exam-id").body;
+    assert.equal(current.examId, payload.examId);
+    assert.ok(current.studentUrl.endsWith(`?exam=${payload.examId}`));
+    assert.equal(request("POST", "/api/settings/exam-id", {
+      origin: "https://other.example", body: { examId: "next-exam" } }).statusCode, 403);
+    assert.equal(request("POST", "/api/settings/exam-id", {
+      origin: "http://localhost:3000", body: { examId: "invalid exam" } }).statusCode, 400);
+    assert.equal(request("POST", "/api/settings/exam-id", {
+      origin: "http://localhost:3000", body: { examId: "next-exam" } }).body.examId, "next-exam");
+    assert.equal(request("GET", "/api/health").body.activeExamId, "next-exam");
+    assert.equal(request("POST", "/api/results", { body: payload }).statusCode, 409);
     console.log("server.test.js: OK");
   } finally {
     fs.unlinkSync(rosterFile);

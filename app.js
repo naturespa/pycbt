@@ -101,15 +101,6 @@
     return item?.max ? item.earned / item.max : 0;
   }
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
   function uniqueIncorrectSkills(questions) {
     const seen = new Set();
     const skills = [];

@@ -17,6 +17,7 @@ async function scenario({ networkFails = false, alteredClientPoint = false } = {
   const localStorage = { setItem(k, v) { storage.set(k, v); },
     getItem(k) { return storage.get(k) ?? null; }, removeItem(k) { storage.delete(k); } };
   const browser = vm.createContext({ window: { scrollTo() {} }, document, localStorage,
+    URLSearchParams, location: { search: "?exam=Practice-2026-09-25test" },
     AbortController, setTimeout, clearTimeout, clearInterval() {},
     console: { info() {}, error() {} } });
   for (const file of ["question-bank.js", "pool/pool-ab.js", "pool/pool-cd.js",
@@ -29,7 +30,7 @@ async function scenario({ networkFails = false, alteredClientPoint = false } = {
     assert.equal(url, "http://192.0.2.10:3000/api/results");
     if (networkFails) throw Error("通信できません");
     const body = JSON.parse(options.body);
-    assert.equal(body.examId, "practice-2026-09-25");
+    assert.equal(body.examId, "Practice-2026-09-25test");
     assert.equal(body.poolVersion, poolVersion);
     const verified = scoreExam(body.studentCode, body.answers, body.poolVersion);
     return { ok: true, json: async () => ({ success: true, verified: true,
