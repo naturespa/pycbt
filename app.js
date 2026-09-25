@@ -96,6 +96,108 @@
     const group = (label, filter) => { const items = results.filter(filter); const earned = items.reduce((s, q) => s + q.earned, 0); const max = items.reduce((s, q) => s + q.points, 0); return { label, earned, max, correct: items.filter(q => q.correct).length, count: items.length }; };
     return { total: group("総合", () => true), knowledge: group("知識・技能", q => q.viewpoint === "knowledge"), thinking: group("思考・判断・表現", q => q.viewpoint === "thinking"), it: group("ITパスポート関連", q => q.it_passport), domains: Object.keys(DOMAIN_NAMES).map(d => group(`${d} ${DOMAIN_NAMES[d]}`, q => q.domain === d)) };
   }
+
+  function scoreRate(item) {
+    return item?.max ? item.earned / item.max : 0;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function uniqueIncorrectSkills(questions) {
+    const seen = new Set();
+    const skills = [];
+    for (const q of questions || []) {
+      if (q.correct || !q.skill) continue;
+      const skill = String(q.skill).trim();
+      if (!skill || seen.has(skill)) continue;
+      seen.add(skill);
+      skills.push(skill);
+    }
+    return skills;
+  }
+
+  function domainItems(scores) {
+    const domains = Array.isArray(scores?.domains)
+      ? scores.domains
+      : Object.values(scores?.domains || {});
+    return domains
+      .filter(item => item?.max)
+      .map(item => ({
+        ...item,
+        rate: scoreRate(item),
+        misses: Math.max(0, Number(item.count || 0) - Number(item.correct || 0))
+      }))
+      .sort((a, b) => a.rate - b.rate || b.misses - a.misses || String(a.label).localeCompare(String(b.label), "ja"));
+  }
+
+  function renderAdvice(scores, questions) {
+    const total = scores.total;
+    const totalRate = scoreRate(total);
+    const totalPct = Math.round(totalRate * 100);
+    const perfect = total?.count > 0 && total.correct === total.count;
+    const skills = uniqueIncorrectSkills(questions);
+    const domains = domainItems(scores);
+    const items = [];
+
+    if (perfect) {
+      items.push("<strong>全問正解です。</strong>今回の範囲は十分に定着しています。分野全体を復習する必要はありません。");
+    } else if (totalRate >= 0.9) {
+      items.push(`<strong>高い到達度です（${totalPct}％）。</strong>基礎から学び直すより、今回の取りこぼしを絞って確認する段階です。`);
+    } else if (totalRate >= 0.8) {
+      items.push(`<strong>十分に到達しています（${totalPct}％）。</strong>全体を復習するのではなく、誤答した内容を中心に確認しましょう。`);
+    } else if (totalRate >= 0.6) {
+      items.push(`<strong>おおむね到達しています（${totalPct}％）。</strong>できている内容を維持しながら、誤答が重なった分野を優先して補強しましょう。`);
+    } else {
+      items.push(`<strong>基礎の定着を優先しましょう（${totalPct}％）。</strong>広く解き直すより、優先順位を付けて基本事項から確認する方が効果的です。`);
+    }
+
+    if (!perfect) {
+      const skillLimit = totalRate >= 0.8 ? 3 : 2;
+      const focusSkills = skills.slice(0, skillLimit);
+      const focusDomains = domains.filter(d => d.rate < 0.7 && d.misses >= 2).slice(0, 2);
+
+      if (totalRate >= 0.9 && focusSkills.length) {
+        items.push(`今回の誤答では <strong>${focusSkills.map(escapeHtml).join("・")}</strong> を確認すると、取りこぼしを減らせます。`);
+      } else if (focusDomains.length) {
+        const labels = focusDomains.map(d => escapeHtml(d.label)).join("・");
+        const skillText = focusSkills.length
+          ? ` 特に <strong>${focusSkills.map(escapeHtml).join("・")}</strong> を解き直してください。`
+          : "";
+        items.push(`優先して見直したい分野は <strong>${labels}</strong> です。${skillText}`);
+      } else if (focusSkills.length) {
+        items.push(`今回の誤答に関係する <strong>${focusSkills.map(escapeHtml).join("・")}</strong> を中心に解き直しましょう。`);
+      }
+    }
+
+    const knowledgeRate = scoreRate(scores.knowledge);
+    const thinkingRate = scoreRate(scores.thinking);
+    const viewpointGap = Math.abs(knowledgeRate - thinkingRate);
+
+    if (viewpointGap >= 0.15) {
+      if (knowledgeRate > thinkingRate) {
+        items.push("<strong>知識・技能の得点率が高めです。</strong>次は、条件を整理し、処理を1行ずつ追って「なぜその答えになるか」を説明する問題に取り組みましょう。");
+      } else {
+        items.push("<strong>思考・判断・表現の得点率が高めです。</strong>問題を考えて解く力を生かしつつ、用語・Pythonの基本構文・演算規則を整理すると得点がさらに安定します。");
+      }
+    } else if (perfect || totalRate >= 0.9) {
+      items.push("次は、処理結果を答えるだけでなく、<strong>理由を説明する・別解を考える・条件を変えて確かめる</strong>学習に進みましょう。");
+    } else if (totalRate >= 0.8) {
+      items.push("解き直しでは答えだけを覚えず、<strong>どの条件・規則を使ったか</strong>を言葉で説明できるか確認しましょう。");
+    } else if (totalRate >= 0.6) {
+      items.push("誤答は、<strong>問題文の条件 → 処理の途中経過 → 答え</strong>の順に書き出して解き直すと理解を整理しやすくなります。");
+    } else {
+      items.push("まずは、例題を使って<strong>用語・基本構文・処理の流れ</strong>を確認し、その後に同じ型の問題をもう一度解きましょう。");
+    }
+
+    $("advice-list").innerHTML = items.slice(0, 3).map(item => `<li>${item}</li>`).join("");
+  }
   function makeRecord(results, stats, auto) {
     return {
       schema_version: 1,
@@ -158,8 +260,7 @@
     $("result-details").innerHTML = [stats.knowledge, stats.thinking].map(s => `<div><span>${s.label}</span><strong>${formatScore(s.earned, s.max)}</strong><small>${s.correct} / ${s.count} 問正答</small></div>`).join("");
     $("domain-results").innerHTML = stats.domains.map(s => `<div><span>${s.label}</span><strong>${Math.round(s.earned / s.max * 100)}%</strong><small>${formatScore(s.earned, s.max)}</small></div>`).join("");
     $("it-result").innerHTML = `<strong>${stats.it.correct} / ${stats.it.count} 問</strong><span>${Math.round(stats.it.earned / stats.it.max * 100)}%　${formatScore(stats.it.earned, stats.it.max)}</span>`;
-    const weak = [...stats.domains, stats.it].filter(s => s.max && s.earned / s.max < .7);
-    $("advice-list").innerHTML = (weak.length ? weak.map(s => `<li><strong>${s.label}</strong>を復習しましょう。基本用語と代表的な問題をもう一度確認します。</li>`) : ["<li>全分野でおおむね到達しています。間違えた問題の解説を確認して、考え方を定着させましょう。</li>"]).join("");
+    renderAdvice(stats, results);
     window.scrollTo({ top: 0, behavior: "smooth" });
     const serverResult = await sendResultToServer(state.record);
     if (serverResult.success && serverResult.result.verified) {
@@ -180,6 +281,7 @@
       $("domain-results").innerHTML = Object.values(verified.scores.domains).map(s => `<div><span>${s.label}</span><strong>${Math.round(s.earned / s.max * 100)}%</strong><small>${formatScore(s.earned, s.max)}</small></div>`).join("");
       const it = verified.scores.it_passport;
       $("it-result").innerHTML = `<strong>${it.correct} / ${it.count} 問</strong><span>${Math.round(it.earned / it.max * 100)}%　${formatScore(it.earned, it.max)}</span>`;
+      renderAdvice(verified.scores, state.record.questions);
       $("server-save-status").textContent = mismatch
         ? "✅ 学校サーバで再採点して保存しました。端末側の点数と差があるため先生に知らせてください。"
         : "✅ 学校サーバで再採点し、成績を保存しました。";
