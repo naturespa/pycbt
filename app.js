@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   // 本番試験の前に local-server/server.js の ACTIVE_EXAM_ID と同じ値へ変更する。
-  const EXAM_ID = "practice-2026-09-25";
+  const EXAM_ID = "Practice-2026-09-25test";
   const STORAGE_PREFIX = `pycbt:v2:${EXAM_ID}:`;
   // 校内サーバのアドレスは各受験端末で入力し、その端末内にだけ保存する。
   const SERVER_IP_KEY = "pycbt:server-ip";
