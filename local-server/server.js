@@ -78,6 +78,14 @@ const allResults = db.prepare(`
          exam_id, pool_version, verification_status, client_score, score_mismatch
   FROM exam_results ORDER BY id DESC
 `);
+const resultById = db.prepare(`
+  SELECT id, exam_id, student_code, student_name, submitted_at
+  FROM exam_results WHERE id = ?
+`);
+const deleteResult = db.prepare(`
+  DELETE FROM exam_results
+  WHERE id = ? AND exam_id = ? AND student_code = ? AND submitted_at = ?
+`);
 const rosterForGrade = db.prepare(`
   SELECT student_code, student_name, imported_at FROM student_roster
   WHERE academic_year = ? AND grade = ? ORDER BY student_code
@@ -333,6 +341,36 @@ async function createBackup() {
   await db.backup(path.join(directory, filename));
   return { directory, filename };
 }
+
+// 削除対象は画面で確認した1件に限定し、DBのスナップショットを先に作る。
+app.post("/api/results/delete", requireTeacherPC, async (req, res) => {
+  const origin = req.get("Origin");
+  if (origin !== `http://localhost:${PORT}` && origin !== `http://127.0.0.1:${PORT}`) {
+    return res.status(403).json({ success: false, message: "管理画面から操作してください" });
+  }
+  const { id, examId, studentCode, submittedAt } = req.body || {};
+  if (!Number.isSafeInteger(id) || id < 1 || typeof examId !== "string" ||
+      typeof studentCode !== "string" || typeof submittedAt !== "string") {
+    return res.status(400).json({ success: false, message: "削除対象の指定が不正です" });
+  }
+  try {
+    const record = resultById.get(id);
+    if (!record || record.exam_id !== examId || record.student_code !== studentCode ||
+        record.submitted_at !== submittedAt) {
+      return res.status(409).json({ success: false, message: "対象の記録が変わりました。画面を再読み込みしてください" });
+    }
+    const backup = await createBackup();
+    const deleted = deleteResult.run(id, examId, studentCode, submittedAt);
+    if (deleted.changes !== 1) {
+      return res.status(409).json({ success: false, message: "対象の記録が変わりました。画面を再読み込みしてください" });
+    }
+    console.log(`[DELETE] 記録ID ${id}／試験ID ${examId}／受験番号 ${studentCode}（削除前バックアップ ${backup.filename}）`);
+    res.json({ success: true, deletedId: id, backupFile: backup.filename });
+  } catch (error) {
+    console.error("成績削除に失敗しました", error);
+    res.status(500).json({ success: false, message: "削除できませんでした。記録は保持されています" });
+  }
+});
 
 app.post("/api/roster/import-file", requireTeacherPC, async (req, res) => {
   try {

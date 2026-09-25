@@ -28,6 +28,15 @@ class Database {
   backup() { return Promise.resolve(); }
   transaction(fn) { return (...args) => fn(...args); }
   prepare(sql) {
+    if (sql.includes("DELETE FROM exam_results")) return { run(id, examId, code, submitted) {
+      const index = saved.findIndex(row => row.id === id && row.exam_id === examId &&
+        row.student_code === code && row.submitted_at === submitted);
+      if (index >= 0) saved.splice(index, 1);
+      return { changes: index >= 0 ? 1 : 0 };
+    } };
+    if (sql.includes("FROM exam_results WHERE id = ?")) return { get(id) {
+      return saved.find(row => row.id === id);
+    } };
     if (sql.includes("INSERT INTO student_roster")) return { run(year, grade, code, name) {
       roster.push({ academic_year: year, grade, student_code: code, student_name: name });
     } };
@@ -182,6 +191,26 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
     });
     assert.equal(outdated.statusCode, 409);
     assert.equal(roster.length, 3);
+    const target = saved.find(row => row.id === 2);
+    const deleteBody = { id: target.id, examId: target.exam_id,
+      studentCode: target.student_code, submittedAt: target.submitted_at };
+    assert.equal(request("POST", "/api/results/delete", {
+      address: "192.0.2.10", origin: "http://localhost:3000", body: deleteBody }).statusCode, 403);
+    assert.equal(request("POST", "/api/results/delete", {
+      origin: "https://other.example", body: deleteBody }).statusCode, 403);
+    assert.equal(request("POST", "/api/results/delete", {
+      origin: "http://localhost:3000", body: { ...deleteBody, studentCode: "9999" } }).statusCode, 409);
+    assert.equal(saved.length, 2);
+    const deletion = request("POST", "/api/results/delete", {
+      origin: "http://localhost:3000", body: deleteBody });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(deletion.body.success, true);
+    assert.ok(deletion.body.backupFile.endsWith(".db"));
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].id, 1);
+    assert.equal(roster.length, 3);
+    assert.equal(request("POST", "/api/results/delete", {
+      origin: "http://localhost:3000", body: deleteBody }).statusCode, 409);
     console.log("server.test.js: OK");
   } finally {
     fs.unlinkSync(rosterFile);
