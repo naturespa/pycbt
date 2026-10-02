@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>情報I CBT</title>
-    <link rel="stylesheet" href="styles.css?v=20260916-ux1" />
+    <link rel="stylesheet" href="styles.css?v=20261002-fullscreen1" />
   </head>
   <body>
     <main class="app-shell">
@@ -15,7 +15,7 @@
           <h1>試験を開始する</h1>
           <p id="exam-id-label" class="hint"></p>
           <p>受験番号（4桁）と氏名を入力し、受験者情報を確認してから開始してください。試験時間は40分です。</p>
-          <section class="entry-notice"><strong>受験上の注意</strong><ul><li>開始後は、画面上部の残り時間を確認してください。</li><li>時間終了時は、解答済みの内容で自動提出されます。</li><li>画面を閉じた場合は、同じブラウザから受験を再開できます。</li></ul></section>
+          <section class="entry-notice"><strong>受験上の注意</strong><ul><li>試験開始時に全画面表示へ切り替わります。</li><li>開始後は、画面上部の残り時間を確認してください。</li><li>全画面表示を解除した場合は、全画面に戻るまで解答操作ができません。制限時間は進み続けます。</li><li>時間終了時は、解答済みの内容で自動提出されます。</li><li>画面を閉じた場合は、同じブラウザから受験を再開できます。</li></ul></section>
           <form id="entry-form">
           <label>学校サーバのIPアドレス（先生から指定）<input id="server-ip" inputmode="decimal" placeholder="例：192.168.1.50" required /></label>
           <p id="server-ip-hint" class="hint">この端末で一度入力すると、次回から自動で表示されます。</p>
@@ -73,7 +73,15 @@
         </div>
       </section>
     </main>
-    <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button class="primary" value="confirm">この内容で開始する</button></div></form></dialog>
+    <section id="exam-fullscreen-overlay" class="exam-fullscreen-overlay" role="dialog" aria-modal="true" aria-labelledby="exam-fullscreen-heading" hidden>
+      <div class="exam-fullscreen-card">
+        <h2 id="exam-fullscreen-heading">全画面表示に戻してください</h2>
+        <p id="exam-fullscreen-message">全画面表示が解除されました。全画面に戻って受験を続けてください。</p>
+        <p class="hint">全画面表示に戻るまで解答操作はできません。制限時間は進み続けます。</p>
+        <button id="exam-fullscreen-return" class="primary" type="button">全画面に戻って受験を続ける</button>
+      </div>
+    </section>
+    <dialog id="confirm-start"><form method="dialog"><h2>受験者情報の確認</h2><p id="start-summary"></p><p id="resume-message" class="hint" hidden></p><p id="fullscreen-start-message" class="fullscreen-error" role="alert" hidden></p><div class="dialog-actions"><button value="cancel">修正する</button><button id="confirm-start-button" class="primary" type="button">この内容で開始する</button></div></form></dialog>
     <dialog id="confirm-submit"><form method="dialog"><h2>提出しますか？</h2><p id="unanswered-message"></p><div class="dialog-actions"><button value="cancel">戻る</button><button id="confirm-submit-button" class="primary" value="confirm">提出する</button></div></form></dialog>
     <script src="question-bank.js?v=20260908-paiza1"></script>
     <script src="pool/pool-ab.js?v=20260916-standalone1"></script>
@@ -86,6 +94,6 @@
     <script src="pool/pool-actual.js?v=20260917-ipa1"></script>
     <script src="pool/pool-engine.js?v=20260908-paiza1"></script>
     <script src="question-presentation.js?v=20260916-ux1"></script>
-    <script src="app.js?v=20260925-advice3"></script>
+    <script src="app.js?v=20261002-fullscreen1"></script>
   </body>
 </html>
