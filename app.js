@@ -18,6 +18,64 @@
   const validIPv4 = value => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) &&
     value.split(".").every(part => Number(part) <= 255);
   const state = { student: null, questions: [], answers: {}, current: 0, startedAt: null, endsAt: null, timer: null, submitted: false, record: null, pending: null };
+  let fullscreenOwned = false;
+
+  function fullscreenExamActive() {
+    return Boolean(state.student && state.startedAt && !state.submitted && !$("exam-screen").hidden);
+  }
+
+  function setFullscreenLock(locked, message = "") {
+    const overlay = $("exam-fullscreen-overlay");
+    const examScreen = $("exam-screen");
+    if (!overlay || !examScreen) return;
+    examScreen.inert = locked;
+    overlay.hidden = !locked;
+    if (locked) {
+      $("exam-fullscreen-message").textContent = message ||
+        "全画面表示が解除されました。全画面に戻って受験を続けてください。";
+      $("exam-fullscreen-return").focus();
+    }
+  }
+
+  async function enterExamFullscreen() {
+    if (!document.fullscreenEnabled || !document.documentElement.requestFullscreen) {
+      throw new Error("全画面表示を利用できません。対応ブラウザの設定・許可を先生に確認してください。");
+    }
+    try {
+      if (document.fullscreenElement !== document.documentElement) {
+        await document.documentElement.requestFullscreen();
+      }
+      if (document.fullscreenElement !== document.documentElement) {
+        throw new Error("fullscreen-not-active");
+      }
+      fullscreenOwned = true;
+      setFullscreenLock(false);
+    } catch {
+      fullscreenOwned = false;
+      throw new Error("この試験は全画面表示で受験します。全画面表示を許可して、もう一度「この内容で開始する」を押してください。");
+    }
+  }
+
+  async function exitExamFullscreen() {
+    setFullscreenLock(false);
+    if (fullscreenOwned && document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (error) {
+        console.warn("全画面表示を終了できませんでした", error);
+      }
+    }
+    fullscreenOwned = false;
+  }
+
+  document.addEventListener("fullscreenchange", () => {
+    if (fullscreenExamActive() && !document.fullscreenElement) {
+      setFullscreenLock(
+        true,
+        "全画面表示が解除されました。全画面に戻って受験を続けてください。"
+      );
+    }
+  });
   const formatScore = (score, total) => `${score} / ${total} 点`;
   const activeKey = (id) => `${STORAGE_PREFIX}active:${id}`;
   const completedKey = (id) => `${STORAGE_PREFIX}completed:${id}`;
@@ -239,6 +297,7 @@
     if (state.submitted) return;
     state.submitted = true; clearInterval(state.timer);
     if ($("confirm-submit").open) $("confirm-submit").close('timeout');
+    await exitExamFullscreen();
     const results = scoreExam(); const stats = calculateStats(results); state.record = makeRecord(results, stats, auto);
     // 通信の前に端末へ結果を残す。サーバが応答しなくてもダウンロードできる。
     setLocal(`${STORAGE_PREFIX}result:${state.student.id}`, state.record);
@@ -301,11 +360,45 @@
     $("resume-message").textContent = state.pending.resume ? "この受験番号には中断中の試験があります。前回の解答と残り時間を復元します。" : "受験番号と氏名を確認してから開始してください。";
     $("confirm-start").showModal();
   });
-  $("confirm-start").addEventListener("close", async () => {
-    if ($("confirm-start").returnValue !== "confirm" || !state.pending) { state.pending = null; return; }
+  $("confirm-start-button").addEventListener("click", async () => {
+    if (!state.pending) return;
+    const button = $("confirm-start-button");
+    const message = $("fullscreen-start-message");
+    button.disabled = true;
+    message.hidden = true;
+    message.textContent = "";
+    try {
+      await enterExamFullscreen();
+      $("confirm-start").close("confirm");
+    } catch (error) {
+      message.textContent = error.message;
+      message.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("confirm-start").addEventListener("close", () => {
+    if ($("confirm-start").returnValue !== "confirm" || !state.pending) {
+      state.pending = null;
+      return;
+    }
     const pending = state.pending;
     beginExam(pending);
     state.pending = null;
+  });
+
+  $("exam-fullscreen-return").addEventListener("click", async () => {
+    if (!fullscreenExamActive()) return;
+    const button = $("exam-fullscreen-return");
+    button.disabled = true;
+    try {
+      await enterExamFullscreen();
+    } catch (error) {
+      $("exam-fullscreen-message").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
   });
   $("previous-button").onclick = () => { if (state.current > 0) { state.current -= 1; persistActive(); renderQuestion(); $("question-heading").focus(); } };
   $("next-button").onclick = () => { if (state.current < state.questions.length - 1) { state.current += 1; persistActive(); renderQuestion(); $("question-heading").focus(); } else { confirmSubmission(); } };
