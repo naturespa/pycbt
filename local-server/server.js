@@ -431,6 +431,177 @@ function requireAdminOrigin(req, res, next) {
   next();
 }
 
+function importRecordError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+// 生徒が結果画面から保存したJSONを、校内サーバと同じ採点マスタで再検証する。
+// JSON内の得点・正誤は信用せず、question_id と response から必ず再採点する。
+function inspectImportedResult(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record) || record.schema_version !== 1) {
+    throw importRecordError(400, "pycbtの結果JSON（schema_version 1）を選択してください");
+  }
+  const assessment = record.assessment;
+  const student = record.student;
+  const session = record.session;
+  const scores = record.scores;
+  if (!assessment || !student || !session || !scores || !Array.isArray(record.questions)) {
+    throw importRecordError(400, "結果JSONに必要な assessment / student / session / scores / questions がありません");
+  }
+
+  const examId = String(assessment.exam_id || "").trim();
+  const submittedPoolVersion = String(assessment.pool_version || "").trim();
+  const code = String(student.id || "").normalize("NFKC").trim();
+  const name = String(student.name || "").trim();
+  const startedAt = String(session.started_at || "").trim();
+  const submittedAt = String(session.submitted_at || "").trim();
+  if (!EXAM_ID_PATTERN.test(examId)) {
+    throw importRecordError(400, "JSONの試験IDが不正です");
+  }
+  if (!/^[1-3][1-9]\d{2}$/.test(code) || code.slice(2) === "00") {
+    throw importRecordError(400, "JSONの受験番号が4桁の形式ではありません");
+  }
+  if (!name || name.length > 60) {
+    throw importRecordError(400, "JSONの氏名が空欄、または長すぎます");
+  }
+  if (!startedAt || Number.isNaN(Date.parse(startedAt)) ||
+      !submittedAt || Number.isNaN(Date.parse(submittedAt))) {
+    throw importRecordError(400, "JSONの開始時刻または提出時刻が不正です");
+  }
+  if (Date.parse(submittedAt) < Date.parse(startedAt)) {
+    throw importRecordError(400, "JSONの提出時刻が開始時刻より前になっています");
+  }
+  if (student.grade != null && Number(student.grade) !== Number(code[0]) ||
+      student.class != null && Number(student.class) !== Number(code[1]) ||
+      student.attendance != null && Number(student.attendance) !== Number(code.slice(2))) {
+    throw importRecordError(400, "JSONの受験番号と学年・組・出席番号が一致しません");
+  }
+  if (record.questions.length !== 45) {
+    throw importRecordError(400, "JSONの問題数が45問ではありません");
+  }
+
+  let verified;
+  try {
+    verified = scoreExam(code, record.questions, submittedPoolVersion);
+  } catch (error) {
+    throw importRecordError(422, error.message);
+  }
+
+  const clientTotal = Number(scores.total?.earned);
+  const clientKnowledge = Number(scores.knowledge?.earned);
+  const clientThinking = Number(scores.thinking?.earned);
+  const validClientScore = value => Number.isInteger(value) && value >= 0 && value <= 100;
+  if (![clientTotal, clientKnowledge, clientThinking].every(validClientScore)) {
+    throw importRecordError(400, "JSONの得点情報が不正です");
+  }
+
+  const trusted = verified.scores;
+  const mismatch = clientTotal !== trusted.total.earned ||
+    clientKnowledge !== trusted.knowledge.earned ||
+    clientThinking !== trusted.thinking.earned;
+  const existing = findSubmission.get(examId, code, startedAt);
+  return {
+    examId, code, name, startedAt, submittedAt,
+    submittedPoolVersion, verified, trusted,
+    clientTotal, clientKnowledge, clientThinking,
+    mismatch, existing,
+    activeExamMismatch: examId !== getActiveExamId()
+  };
+}
+
+app.post("/api/results/import-json/preview", requireTeacherPC, requireAdminOrigin, (req, res) => {
+  try {
+    const inspected = inspectImportedResult(req.body?.record);
+    res.set("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      duplicate: Boolean(inspected.existing),
+      existingResultId: inspected.existing?.id ?? null,
+      activeExamMismatch: inspected.activeExamMismatch,
+      activeExamId: getActiveExamId(),
+      examId: inspected.examId,
+      studentCode: inspected.code,
+      studentName: inspected.name,
+      startedAt: inspected.startedAt,
+      submittedAt: inspected.submittedAt,
+      poolVersion: inspected.submittedPoolVersion,
+      clientScore: inspected.clientTotal,
+      serverScore: inspected.trusted.total.earned,
+      knowledgeScore: inspected.trusted.knowledge.earned,
+      thinkingScore: inspected.trusted.thinking.earned,
+      scoreMismatch: inspected.mismatch
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "JSONを確認できませんでした"
+    });
+  }
+});
+
+// 既存成績は一切更新・上書きしない。同一提出はスキップし、新規提出だけを追加する。
+// 追加前に必ずDBバックアップを作り、結果JSONの提出時刻をそのまま保存する。
+app.post("/api/results/import-json", requireTeacherPC, requireAdminOrigin, async (req, res) => {
+  try {
+    let inspected = inspectImportedResult(req.body?.record);
+    if (inspected.existing) {
+      return res.json({
+        success: true, duplicate: true, imported: false,
+        resultId: inspected.existing.id,
+        examId: inspected.examId, studentCode: inspected.code,
+        score: inspected.trusted.total.earned
+      });
+    }
+
+    const backup = await createBackup();
+    // バックアップ中に同じ提出が別経路から保存された可能性を再確認する。
+    inspected = inspectImportedResult(req.body?.record);
+    if (inspected.existing) {
+      return res.json({
+        success: true, duplicate: true, imported: false,
+        resultId: inspected.existing.id,
+        examId: inspected.examId, studentCode: inspected.code,
+        score: inspected.trusted.total.earned,
+        backupFile: backup.filename
+      });
+    }
+
+    const result = insertResult.run(
+      inspected.code,
+      inspected.name,
+      `${inspected.code[0]}年${inspected.code[1]}組`,
+      inspected.trusted.total.earned,
+      inspected.trusted.knowledge.earned,
+      inspected.trusted.thinking.earned,
+      JSON.stringify(inspected.verified.questions),
+      inspected.startedAt,
+      inspected.submittedAt,
+      inspected.examId,
+      inspected.verified.poolVersion,
+      "server_scored",
+      inspected.clientTotal,
+      inspected.mismatch ? 1 : 0
+    );
+    const resultId = Number(result.lastInsertRowid);
+    console.log(`[IMPORT JSON] ${inspected.examId} ${inspected.code} ${inspected.name} ${inspected.trusted.total.earned}点（記録ID ${resultId}／取込前バックアップ ${backup.filename}）`);
+    res.json({
+      success: true, duplicate: false, imported: true,
+      resultId, backupFile: backup.filename,
+      examId: inspected.examId, studentCode: inspected.code,
+      score: inspected.trusted.total.earned,
+      scoreMismatch: inspected.mismatch
+    });
+  } catch (error) {
+    console.error("結果JSONの取込に失敗しました", error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "結果JSONを取り込めませんでした。既存成績は変更されていません"
+    });
+  }
+});
+
 app.get("/api/settings/exam-id", requireTeacherPC, (_req, res) => {
   const examId = getActiveExamId();
   res.set("Cache-Control", "no-store");
