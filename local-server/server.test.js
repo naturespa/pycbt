@@ -15,6 +15,7 @@ const saved = [{ id: 1, student_code: "1215", student_name: "旧データ", clas
 const migrations = [];
 const roster = [];
 const archives = [];
+const corrections = [];
 const settings = new Map();
 let backupFails = false;
 const app = { disable() {}, use() {}, listen(_port, _host, callback) { callback(); } };
@@ -39,6 +40,42 @@ class Database {
     } };
     if (sql.includes("INSERT INTO app_settings")) return { run(key, value) {
       settings.set(key, value);
+    } };
+    if (sql.includes("INSERT INTO student_code_corrections")) return { run(
+      resultId, examId, oldCode, newCode, name, started, submitted, backupFile
+    ) {
+      const correction_id = corrections.length + 1;
+      corrections.push({ correction_id, result_id: resultId, exam_id: examId,
+        old_student_code: oldCode, new_student_code: newCode, student_name: name,
+        started_at: started, submitted_at: submitted,
+        corrected_at: "2026-10-05 06:00:00", backup_file: backupFile });
+      return { lastInsertRowid: correction_id };
+    } };
+    if (sql.includes("FROM student_code_corrections ORDER BY")) return { all() {
+      return corrections.slice().reverse();
+    } };
+    if (sql.includes("JOIN exam_results r ON r.id = c.result_id")) return { get(examId, oldCode, started) {
+      const correction = corrections.find(row => row.exam_id === examId &&
+        row.old_student_code === oldCode && row.started_at === started);
+      if (!correction) return undefined;
+      const row = saved.find(item => item.id === correction.result_id);
+      if (!row) return undefined;
+      return { id: row.id, answers: row.answers, verification_status: row.verification_status,
+        score: row.score, knowledge_score: row.knowledge_score, thinking_score: row.thinking_score };
+    } };
+    if (sql.includes("UPDATE exam_results") && sql.includes("SET student_code = ?")) return { run(
+      newCode, className, id, examId, oldCode, submitted
+    ) {
+      const row = saved.find(item => item.id === id && item.exam_id === examId &&
+        item.student_code === oldCode && item.submitted_at === submitted);
+      if (!row) return { changes: 0 };
+      row.student_code = newCode;
+      row.class_name = className;
+      return { changes: 1 };
+    } };
+    if (sql.includes("SELECT COUNT(*) AS count FROM exam_results")) return { get(examId, code, id) {
+      return { count: saved.filter(row => row.exam_id === examId &&
+        row.student_code === code && row.id !== id).length };
     } };
     if (sql.includes("INSERT INTO deleted_results")) return { run(id, examId, code, name, submitted, recordJson, backupFile) {
       const archive_id = archives.length + 1;
@@ -386,6 +423,72 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(failedJsonImport.statusCode, 500);
     assert.equal(saved.some(row => row.student_code === "1219"), false);
+    backupFails = false;
+
+    // やむを得ず別の出席番号で受験した記録を、得点・答案・時刻を変えずに訂正する。
+    const beforeCorrection = {
+      score: importedRow.score,
+      knowledge_score: importedRow.knowledge_score,
+      thinking_score: importedRow.thinking_score,
+      answers: importedRow.answers,
+      started_at: importedRow.started_at,
+      submitted_at: importedRow.submitted_at,
+      exam_id: importedRow.exam_id,
+      verification_status: importedRow.verification_status,
+      client_score: importedRow.client_score,
+      score_mismatch: importedRow.score_mismatch
+    };
+    assert.equal(request("POST", "/api/results/change-attendance", {
+      address: "192.0.2.10", origin: "http://localhost:3000",
+      body: { id: importedRow.id, examId: importedRow.exam_id,
+        studentCode: importedRow.student_code, submittedAt: importedRow.submitted_at,
+        newAttendance: 18 }
+    }).statusCode, 403);
+    assert.equal(request("POST", "/api/results/change-attendance", {
+      origin: "https://other.example",
+      body: { id: importedRow.id, examId: importedRow.exam_id,
+        studentCode: importedRow.student_code, submittedAt: importedRow.submitted_at,
+        newAttendance: 18 }
+    }).statusCode, 403);
+    const correction = request("POST", "/api/results/change-attendance", {
+      origin: "http://localhost:3000",
+      body: { id: importedRow.id, examId: importedRow.exam_id,
+        studentCode: importedRow.student_code, submittedAt: importedRow.submitted_at,
+        newAttendance: 18, confirmExisting: false }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(correction.body.success, true);
+    assert.equal(correction.body.oldStudentCode, "1216");
+    assert.equal(correction.body.newStudentCode, "1218");
+    assert.ok(correction.body.backupFile.endsWith(".db"));
+    assert.equal(importedRow.student_code, "1218");
+    assert.equal(importedRow.class_name, "1年2組");
+    for (const [key, value] of Object.entries(beforeCorrection)) {
+      assert.equal(importedRow[key], value, `correction changed ${key}`);
+    }
+    const correctionHistory = request("GET", "/api/results/student-code-corrections").body.history;
+    assert.equal(correctionHistory.length, 1);
+    assert.equal(correctionHistory[0].old_student_code, "1216");
+    assert.equal(correctionHistory[0].new_student_code, "1218");
+
+    // 訂正前の受験番号で保存された同じJSONを再読込しても、重複として認識する。
+    const duplicateAfterCorrection = request("POST", "/api/results/import-json", {
+      origin: "http://localhost:3000", body: { record: offlineRecord } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(duplicateAfterCorrection.body.duplicate, true);
+    assert.equal(saved.filter(row => row.exam_id === "Practice-2026-10-05").length, 1);
+
+    // バックアップ失敗時は受験番号も変更しない。
+    backupFails = true;
+    const failedCorrection = request("POST", "/api/results/change-attendance", {
+      origin: "http://localhost:3000",
+      body: { id: importedRow.id, examId: importedRow.exam_id,
+        studentCode: importedRow.student_code, submittedAt: importedRow.submitted_at,
+        newAttendance: 20, confirmExisting: false }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(failedCorrection.statusCode, 500);
+    assert.equal(importedRow.student_code, "1218");
     backupFails = false;
 
     console.log("server.test.js: OK");
