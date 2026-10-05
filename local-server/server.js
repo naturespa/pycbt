@@ -65,6 +65,22 @@ db.exec(`
     restore_backup_file TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_deleted_results_id ON deleted_results(result_id);
+  CREATE TABLE IF NOT EXISTS student_code_corrections (
+    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id INTEGER NOT NULL,
+    exam_id TEXT NOT NULL,
+    old_student_code TEXT NOT NULL,
+    new_student_code TEXT NOT NULL,
+    student_name TEXT NOT NULL,
+    started_at TEXT,
+    submitted_at TEXT,
+    corrected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    backup_file TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_student_code_corrections_result
+    ON student_code_corrections(result_id);
+  CREATE INDEX IF NOT EXISTS idx_student_code_corrections_identity
+    ON student_code_corrections(exam_id, old_student_code, started_at);
   CREATE TABLE IF NOT EXISTS app_settings (
     setting_key TEXT PRIMARY KEY,
     setting_value TEXT NOT NULL,
@@ -124,8 +140,15 @@ const insertResult = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const findSubmission = db.prepare(`
-  SELECT id, answers, verification_status FROM exam_results
+  SELECT id, answers, verification_status, score, knowledge_score, thinking_score
+  FROM exam_results
   WHERE exam_id = ? AND student_code = ? AND started_at = ? LIMIT 1
+`);
+const findCorrectedSubmission = db.prepare(`
+  SELECT r.id, r.answers, r.verification_status, r.score, r.knowledge_score, r.thinking_score
+  FROM student_code_corrections c
+  JOIN exam_results r ON r.id = c.result_id
+  WHERE c.exam_id = ? AND c.old_student_code = ? AND c.started_at IS ? LIMIT 1
 `);
 const allResults = db.prepare(`
   SELECT id, student_code, student_name, class_name, score,
@@ -178,6 +201,26 @@ const insertRoster = db.prepare(`
   INSERT INTO student_roster (academic_year, grade, student_code, student_name)
   VALUES (?, ?, ?, ?)
 `);
+const insertStudentCodeCorrection = db.prepare(`
+  INSERT INTO student_code_corrections
+    (result_id, exam_id, old_student_code, new_student_code, student_name,
+     started_at, submitted_at, backup_file)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const studentCodeCorrectionHistory = db.prepare(`
+  SELECT correction_id, result_id, exam_id, old_student_code, new_student_code,
+         student_name, started_at, submitted_at, corrected_at, backup_file
+  FROM student_code_corrections ORDER BY correction_id DESC
+`);
+const updateStudentCode = db.prepare(`
+  UPDATE exam_results
+  SET student_code = ?, class_name = ?
+  WHERE id = ? AND exam_id = ? AND student_code = ? AND submitted_at IS ?
+`);
+const countTargetCodeInExam = db.prepare(`
+  SELECT COUNT(*) AS count FROM exam_results
+  WHERE exam_id = ? AND student_code = ? AND id <> ?
+`);
 
 function requireTeacherPC(req, res, next) {
   const address = req.socket.remoteAddress;
@@ -187,6 +230,37 @@ function requireTeacherPC(req, res, next) {
     return next();
   }
   return res.status(403).json({ success: false, message: "管理画面は先生PCの localhost から開いてください" });
+}
+
+function findSubmissionByOriginalIdentity(examId, studentCode, startedAt) {
+  return findSubmission.get(examId, studentCode, startedAt) ||
+    findCorrectedSubmission.get(examId, studentCode, startedAt);
+}
+
+function scoresFromStoredQuestions(questions) {
+  const items = Array.isArray(questions) ? questions : [];
+  const group = (label, selected) => ({
+    label,
+    earned: selected.reduce((n, q) => n + (Number(q.earned) || 0), 0),
+    max: selected.reduce((n, q) => n + (Number(q.points) || 0), 0),
+    correct: selected.filter(q => q.correct).length,
+    count: selected.length
+  });
+  const domains = Object.fromEntries(Object.entries({
+    A: "アルゴリズム基礎・表現", B: "コンピュータ言語",
+    C: "変数・データ型・演算", D: "条件分岐・反復",
+    E: "配列・データ構造", F: "擬似言語・総合アルゴリズム"
+  }).map(([domain, label]) => [
+    domain,
+    group(`${domain} ${label}`, items.filter(q => q.domain === domain))
+  ]));
+  return {
+    total: group("総合", items),
+    knowledge: group("知識・技能", items.filter(q => q.viewpoint === "knowledge")),
+    thinking: group("思考・判断・表現", items.filter(q => q.viewpoint === "thinking")),
+    domains,
+    it_passport: group("ITパスポート関連", items.filter(q => q.it_passport))
+  };
 }
 
 function allowedPage(req, res, next) {
@@ -225,12 +299,13 @@ app.post("/api/results", allowedPage, pageCors, (req, res) => {
     let verified;
     try { verified = scoreExam(code, answers, submittedPoolVersion); }
     catch (error) { return res.status(422).json({ success: false, message: error.message }); }
-    const existing = findSubmission.get(examId, code, startedAt);
+    const existing = findSubmissionByOriginalIdentity(examId, code, startedAt);
     if (existing) {
-      const previous = scoreExam(code, JSON.parse(existing.answers), submittedPoolVersion);
+      const previousQuestions = JSON.parse(existing.answers || "[]");
+      const previousScores = scoresFromStoredQuestions(previousQuestions);
       return res.json({ success: true, verified: true, resultId: existing.id,
-        duplicate: true, scores: previous.scores,
-        questionResults: previous.questions.map(q => ({ question_id: q.question_id, correct: q.correct, points: q.points, earned: q.earned })) });
+        duplicate: true, scores: previousScores,
+        questionResults: previousQuestions.map(q => ({ question_id: q.question_id, correct: q.correct, points: q.points, earned: q.earned })) });
     }
     const trustedScore = verified.scores;
     const mismatch = score !== trustedScore.total.earned ||
@@ -501,7 +576,7 @@ function inspectImportedResult(record) {
   const mismatch = clientTotal !== trusted.total.earned ||
     clientKnowledge !== trusted.knowledge.earned ||
     clientThinking !== trusted.thinking.earned;
-  const existing = findSubmission.get(examId, code, startedAt);
+  const existing = findSubmissionByOriginalIdentity(examId, code, startedAt);
   return {
     examId, code, name, startedAt, submittedAt,
     submittedPoolVersion, verified, trusted,
@@ -599,6 +674,105 @@ app.post("/api/results/import-json", requireTeacherPC, requireAdminOrigin, async
       success: false,
       message: error.statusCode ? error.message : "結果JSONを取り込めませんでした。既存成績は変更されていません"
     });
+  }
+});
+
+const changeStudentAttendance = db.transaction((record, newStudentCode, backupFile) => {
+  const current = resultById.get(record.id);
+  if (!current || current.exam_id !== record.exam_id ||
+      current.student_code !== record.student_code ||
+      current.submitted_at !== record.submitted_at) {
+    throw Error("対象の記録が変わりました");
+  }
+  const newClassName = `${newStudentCode[0]}年${newStudentCode[1]}組`;
+  const changed = updateStudentCode.run(
+    newStudentCode, newClassName, current.id, current.exam_id,
+    current.student_code, current.submitted_at
+  );
+  if (changed.changes !== 1) throw Error("対象の記録が変わりました");
+  insertStudentCodeCorrection.run(
+    current.id, current.exam_id, current.student_code, newStudentCode,
+    current.student_name, current.started_at ?? null, current.submitted_at ?? null, backupFile
+  );
+  return { oldStudentCode: current.student_code, newStudentCode };
+});
+
+app.post("/api/results/change-attendance", requireTeacherPC, requireAdminOrigin, async (req, res) => {
+  const { id, examId, studentCode, submittedAt, newAttendance } = req.body || {};
+  const attendance = Number(newAttendance);
+  if (!Number.isSafeInteger(id) || id < 1 || typeof examId !== "string" ||
+      typeof studentCode !== "string" || (submittedAt !== null && typeof submittedAt !== "string") ||
+      !Number.isInteger(attendance) || attendance < 1 || attendance > 99) {
+    return res.status(400).json({ success: false, message: "訂正内容が不正です" });
+  }
+  try {
+    const record = resultById.get(id);
+    if (!record || record.exam_id !== examId || record.student_code !== studentCode ||
+        record.submitted_at !== submittedAt) {
+      return res.status(409).json({ success: false, message: "対象の記録が変わりました。画面を再読み込みしてください" });
+    }
+    if (!/^[1-3][1-9]\d{2}$/.test(record.student_code || "")) {
+      return res.status(409).json({ success: false, message: "現在の受験番号が4桁形式ではないため訂正できません" });
+    }
+    const newStudentCode = record.student_code.slice(0, 2) + String(attendance).padStart(2, "0");
+    if (newStudentCode === record.student_code) {
+      return res.status(400).json({ success: false, message: "現在と同じ出席番号です" });
+    }
+    const targetCount = Number(countTargetCodeInExam.get(examId, newStudentCode, id)?.count || 0);
+    if (targetCount > 0 && req.body?.confirmExisting !== true) {
+      return res.status(409).json({
+        success: false,
+        code: "TARGET_HAS_RECORDS",
+        message: `同じ試験IDに受験番号 ${newStudentCode} の記録が ${targetCount} 件あります`,
+        targetCount, newStudentCode
+      });
+    }
+
+    const before = {
+      score: record.score,
+      knowledge_score: record.knowledge_score,
+      thinking_score: record.thinking_score,
+      answers: record.answers,
+      started_at: record.started_at,
+      submitted_at: record.submitted_at,
+      exam_id: record.exam_id,
+      verification_status: record.verification_status,
+      client_score: record.client_score,
+      score_mismatch: record.score_mismatch
+    };
+    const backup = await createBackup();
+    const changed = changeStudentAttendance(record, newStudentCode, backup.filename);
+    const after = resultById.get(id);
+    for (const [key, value] of Object.entries(before)) {
+      if (after?.[key] !== value) {
+        throw Error(`受験番号以外の成績情報が変更されました：${key}`);
+      }
+    }
+    console.log(`[CHANGE ATTENDANCE] 記録ID ${id}／${changed.oldStudentCode} → ${changed.newStudentCode}（訂正前バックアップ ${backup.filename}）`);
+    res.json({
+      success: true,
+      resultId: id,
+      oldStudentCode: changed.oldStudentCode,
+      newStudentCode: changed.newStudentCode,
+      targetCount,
+      backupFile: backup.filename
+    });
+  } catch (error) {
+    console.error("出席番号の訂正に失敗しました", error);
+    res.status(500).json({
+      success: false,
+      message: "出席番号を訂正できませんでした。成績・答案は変更されていません"
+    });
+  }
+});
+
+app.get("/api/results/student-code-corrections", requireTeacherPC, (_req, res) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true, history: studentCodeCorrectionHistory.all() });
+  } catch (error) {
+    console.error("受験番号訂正履歴を取得できませんでした", error);
+    res.status(500).json({ success: false, message: "受験番号訂正履歴を取得できませんでした" });
   }
 });
 
