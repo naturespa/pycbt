@@ -7,13 +7,21 @@ const { scoreExam, poolVersion } = require("./scoring");
 
 async function scenario({ networkFails = false, alteredClientPoint = false } = {}) {
   const elements = new Map(), storage = new Map([["pycbt:server-ip", "192.0.2.10"]]);
-  const document = { getElementById(id) {
-    if (!elements.has(id)) elements.set(id, {
-      hidden: false, open: false, textContent: "", innerHTML: "",
-      addEventListener() {}, close() {}
-    });
-    return elements.get(id);
-  } };
+  const document = {
+    fullscreenEnabled: true,
+    fullscreenElement: null,
+    documentElement: { async requestFullscreen() { document.fullscreenElement = document.documentElement; } },
+    addEventListener() {},
+    async exitFullscreen() { document.fullscreenElement = null; },
+    querySelectorAll() { return []; },
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, {
+        hidden: false, open: false, textContent: "", innerHTML: "", disabled: false,
+        inert: false, addEventListener() {}, close() {}, focus() {}, setAttribute() {}
+      });
+      return elements.get(id);
+    }
+  };
   const localStorage = { setItem(k, v) { storage.set(k, v); },
     getItem(k) { return storage.get(k) ?? null; }, removeItem(k) { storage.delete(k); } };
   const browser = vm.createContext({ window: { scrollTo() {} }, document, localStorage,
