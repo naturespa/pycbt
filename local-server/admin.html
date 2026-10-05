@@ -24,10 +24,11 @@
     button:hover, a.button:hover { background: #163d71; }
     button.danger { background: #a11f2a; border-color: #a11f2a; padding: 5px 10px; }
     button.danger:hover { background: #7b1821; }
+    button.compact { padding: 5px 10px; margin-right: 6px; }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    .exam-settings, .json-import, .roster, .history { margin-top: 20px; }
+    .exam-settings, .json-import, .corrections, .roster, .history { margin-top: 20px; }
     .exam-settings { margin-top: 0; }
-    .exam-settings h2, .json-import h2, .roster h2, .history h2 { margin: 0 0 14px; }
+    .exam-settings h2, .json-import h2, .corrections h2, .roster h2, .history h2 { margin: 0 0 14px; }
     .json-import .ok { color: #126b39; font-weight: 700; }
     .json-import .warn { color: #8a5a00; font-weight: 700; }
     .error { color: #a11f2a; font-weight: 700; }
@@ -98,6 +99,18 @@
         <table>
           <thead><tr><th>ファイル</th><th>確認</th><th>試験ID</th><th>受験番号</th><th>氏名</th><th>JSON表示点</th><th>サーバ再採点</th><th>提出時刻</th><th>備考</th></tr></thead>
           <tbody id="json-results"><tr><td colspan="9">JSONファイルを選択してください。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel corrections">
+      <h2>受験番号訂正履歴</h2>
+      <p class="note">「出席番号訂正」で変更した履歴です。得点・答案・試験ID・開始時刻・提出時刻は変更しません。訂正前にはDBバックアップを作成します。</p>
+      <p id="correction-message" role="status" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>訂正日時</th><th>試験ID</th><th>氏名</th><th>訂正前</th><th>訂正後</th><th>記録ID</th><th>提出時刻</th></tr></thead>
+          <tbody id="correction-results"></tbody>
         </table>
       </div>
     </section>
@@ -184,9 +197,17 @@
           tr.appendChild(td);
         });
         const action = document.createElement("td");
+        const correctionButton = document.createElement("button");
+        correctionButton.type = "button";
+        correctionButton.className = "compact";
+        correctionButton.textContent = "出席番号訂正";
+        correctionButton.setAttribute("aria-label", `記録ID ${row.id} の出席番号を訂正`);
+        correctionButton.addEventListener("click", () => changeAttendance(row, correctionButton));
+        action.appendChild(correctionButton);
+
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";
-        deleteButton.className = "danger";
+        deleteButton.className = "danger compact";
         deleteButton.textContent = "削除";
         deleteButton.setAttribute("aria-label", `記録ID ${row.id} を削除`);
         deleteButton.addEventListener("click", () => removeResult(row, deleteButton));
@@ -228,6 +249,7 @@
         $("status").textContent = `更新しました（${new Date().toLocaleTimeString("ja-JP")}）`;
         render();
         await loadRosterStatus();
+        await loadCorrectionHistory();
         await loadDeletionHistory();
       } catch (error) {
         $("status").className = "error";
@@ -462,6 +484,97 @@
       $("json-message").textContent =
         `取込結果：追加 ${imported}件 ／ 重複スキップ ${duplicates}件 ／ 失敗 ${failed}件。${backupNote}`;
       renderJsonPreview();
+    }
+
+    async function loadCorrectionHistory() {
+      const tbody = $("correction-results");
+      try {
+        const data = await apiJson("/api/results/student-code-corrections");
+        $("correction-message").className = "";
+        $("correction-message").textContent = "";
+        tbody.replaceChildren();
+        for (const row of data.history) {
+          const tr = document.createElement("tr");
+          for (const value of [
+            timestamp(row.corrected_at), row.exam_id, row.student_name,
+            row.old_student_code, row.new_student_code, row.result_id,
+            timestamp(row.submitted_at)
+          ]) {
+            const td = document.createElement("td");
+            td.textContent = value ?? "";
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        if (!data.history.length) {
+          const tr = document.createElement("tr"), td = document.createElement("td");
+          td.colSpan = 7;
+          td.textContent = "受験番号の訂正履歴はありません。";
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+      } catch (error) {
+        $("correction-message").className = "error";
+        $("correction-message").textContent = `訂正履歴を取得できませんでした：${error.message}`;
+      }
+    }
+
+    async function changeAttendance(row, button) {
+      if (!/^[1-3][1-9]\d{2}$/.test(row.student_code || "")) {
+        window.alert("この記録の受験番号は4桁形式ではないため、出席番号だけを訂正できません。");
+        return;
+      }
+      const currentAttendance = Number(row.student_code.slice(2));
+      const entered = window.prompt(
+        `記録ID ${row.id}／${row.student_name}\n現在：${row.student_code}（出席番号 ${currentAttendance}）\n\n正しい出席番号を1～99で入力してください。\n※学年・組・得点・答案・提出時刻は変更しません。`,
+        String(currentAttendance)
+      );
+      if (entered === null) return;
+      const normalized = entered.normalize("NFKC").trim();
+      if (!/^\d{1,2}$/.test(normalized) || Number(normalized) < 1 || Number(normalized) > 99) {
+        window.alert("出席番号は1～99の数字で入力してください。");
+        return;
+      }
+      const attendance = Number(normalized);
+      const newStudentCode = row.student_code.slice(0, 2) + String(attendance).padStart(2, "0");
+      if (newStudentCode === row.student_code) {
+        window.alert("現在と同じ出席番号です。");
+        return;
+      }
+      const existing = allRows.filter(item =>
+        item.id !== row.id && item.exam_id === row.exam_id && item.student_code === newStudentCode);
+      let message =
+        `受験番号を ${row.student_code} → ${newStudentCode} に訂正します。\n\n変更するのは受験番号だけです。総合点・観点別得点・答案・試験ID・開始時刻・提出時刻はそのまま保持します。`;
+      if (existing.length) {
+        message += `\n\n注意：同じ試験IDに ${newStudentCode} の記録が既に ${existing.length} 件あります。訂正後は複数提出として表示されます。`;
+      }
+      message += "\n\n続けますか？";
+      if (!window.confirm(message)) return;
+
+      button.disabled = true;
+      $("status").className = "";
+      $("status").textContent = `記録ID ${row.id} の訂正前バックアップを作成中…`;
+      try {
+        const result = await apiJson("/api/results/change-attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: row.id,
+            examId: row.exam_id,
+            studentCode: row.student_code,
+            submittedAt: row.submitted_at,
+            newAttendance: attendance,
+            confirmExisting: existing.length > 0
+          })
+        });
+        await reload();
+        $("status").textContent =
+          `記録ID ${result.resultId} の受験番号を ${result.oldStudentCode} → ${result.newStudentCode} に訂正しました。得点・答案は変更していません。訂正前DBバックアップ：C:\\cbt\\backups\\${result.backupFile}`;
+      } catch (error) {
+        button.disabled = false;
+        $("status").className = "error";
+        $("status").textContent = `出席番号の訂正に失敗しました：${error.message}`;
+      }
     }
 
     async function removeResult(row, button) {
