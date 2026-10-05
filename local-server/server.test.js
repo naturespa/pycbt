@@ -320,6 +320,74 @@ fs.writeFileSync(rosterFile, "受験番号,氏名\n1215,テスト生徒\n1216,�
       origin: "http://localhost:3000", body: { examId: "next-exam" } }).body.examId, "next-exam");
     assert.equal(request("GET", "/api/health").body.activeExamId, "next-exam");
     assert.equal(request("POST", "/api/results", { body: payload }).statusCode, 409);
+
+    // 学校サーバへ送れず、生徒端末で保存した結果JSONを管理画面から安全に追加する。
+    // 現在の試験IDと異なる過去JSONでも、そのJSON自身の試験IDを保持して取り込める。
+    const offlineQuestions = browser.window.generateExamForStudent("1216");
+    const offlineRecord = {
+      schema_version: 1,
+      assessment: { title: "情報I CBT", exam_id: "Practice-2026-10-05",
+        pool_version: poolVersion },
+      student: { id: "1216", grade: 1, class: 2, attendance: 16, name: "JSON提出者" },
+      session: { started_at: "2026-10-05T04:00:00.000Z",
+        submitted_at: "2026-10-05T04:40:00.000Z", auto_submitted: false, duration_seconds: 2400 },
+      scores: {
+        total: { earned: 0 }, knowledge: { earned: 0 }, thinking: { earned: 0 }
+      },
+      questions: offlineQuestions.map(q => ({ question_id: q.id, response: q.answer,
+        correct: false, points: 99, earned: 0 }))
+    };
+    assert.equal(request("POST", "/api/results/import-json/preview", {
+      address: "192.0.2.10", origin: "http://localhost:3000",
+      body: { record: offlineRecord } }).statusCode, 403);
+    assert.equal(request("POST", "/api/results/import-json/preview", {
+      origin: "https://other.example", body: { record: offlineRecord } }).statusCode, 403);
+    const jsonPreview = request("POST", "/api/results/import-json/preview", {
+      origin: "http://localhost:3000", body: { record: offlineRecord } });
+    assert.equal(jsonPreview.body.success, true);
+    assert.equal(jsonPreview.body.duplicate, false);
+    assert.equal(jsonPreview.body.serverScore, 100);
+    assert.equal(jsonPreview.body.scoreMismatch, true);
+    assert.equal(jsonPreview.body.activeExamMismatch, true);
+    const beforeJsonImport = saved.length;
+    const jsonImport = request("POST", "/api/results/import-json", {
+      origin: "http://localhost:3000", body: { record: offlineRecord } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(jsonImport.body.success, true);
+    assert.equal(jsonImport.body.imported, true);
+    assert.ok(jsonImport.body.backupFile.endsWith(".db"));
+    assert.equal(saved.length, beforeJsonImport + 1);
+    const importedRow = saved.find(row => row.exam_id === "Practice-2026-10-05" &&
+      row.student_code === "1216");
+    assert.equal(importedRow.score, 100);
+    assert.equal(importedRow.knowledge_score, 40);
+    assert.equal(importedRow.thinking_score, 60);
+    assert.equal(importedRow.submitted_at, offlineRecord.session.submitted_at);
+    assert.equal(importedRow.verification_status, "server_scored");
+    assert.equal(importedRow.score_mismatch, 1);
+    assert.equal(JSON.parse(importedRow.answers)[0].points !== 99, true);
+    const duplicateJson = request("POST", "/api/results/import-json", {
+      origin: "http://localhost:3000", body: { record: offlineRecord } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(duplicateJson.body.duplicate, true);
+    assert.equal(saved.length, beforeJsonImport + 1);
+
+    const failedQuestions = browser.window.generateExamForStudent("1219");
+    const failedRecord = {
+      ...offlineRecord,
+      student: { id: "1219", grade: 1, class: 2, attendance: 19, name: "バックアップ失敗" },
+      session: { ...offlineRecord.session, started_at: "2026-10-05T05:00:00.000Z",
+        submitted_at: "2026-10-05T05:40:00.000Z" },
+      questions: failedQuestions.map(q => ({ question_id: q.id, response: q.answer }))
+    };
+    backupFails = true;
+    const failedJsonImport = request("POST", "/api/results/import-json", {
+      origin: "http://localhost:3000", body: { record: failedRecord } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(failedJsonImport.statusCode, 500);
+    assert.equal(saved.some(row => row.student_code === "1219"), false);
+    backupFails = false;
+
     console.log("server.test.js: OK");
   } finally {
     fs.unlinkSync(rosterFile);
