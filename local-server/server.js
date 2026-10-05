@@ -684,17 +684,19 @@ const changeStudentAttendance = db.transaction((record, newStudentCode, backupFi
       current.submitted_at !== record.submitted_at) {
     throw Error("対象の記録が変わりました");
   }
+  const oldStudentCode = current.student_code;
+  const oldSubmittedAt = current.submitted_at;
   const newClassName = `${newStudentCode[0]}年${newStudentCode[1]}組`;
   const changed = updateStudentCode.run(
     newStudentCode, newClassName, current.id, current.exam_id,
-    current.student_code, current.submitted_at
+    oldStudentCode, oldSubmittedAt
   );
   if (changed.changes !== 1) throw Error("対象の記録が変わりました");
   insertStudentCodeCorrection.run(
-    current.id, current.exam_id, current.student_code, newStudentCode,
-    current.student_name, current.started_at ?? null, current.submitted_at ?? null, backupFile
+    current.id, current.exam_id, oldStudentCode, newStudentCode,
+    current.student_name, current.started_at ?? null, oldSubmittedAt ?? null, backupFile
   );
-  return { oldStudentCode: current.student_code, newStudentCode };
+  return { oldStudentCode, newStudentCode };
 });
 
 app.post("/api/results/change-attendance", requireTeacherPC, requireAdminOrigin, async (req, res) => {
