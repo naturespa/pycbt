@@ -1,0 +1,33 @@
+name: Local server tests
+
+on:
+  push:
+    paths:
+      - "local-server/**"
+      - "question-bank.js"
+      - "pool/**"
+      - ".github/workflows/local-server-tests.yml"
+  pull_request:
+    paths:
+      - "local-server/**"
+      - "question-bank.js"
+      - "pool/**"
+      - ".github/workflows/local-server-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Scoring tests
+        run: node local-server/scoring.test.js
+      - name: Server tests
+        run: node local-server/server.test.js
+      - name: Client flow tests
+        run: node local-server/client-flow.test.js
