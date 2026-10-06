@@ -1,0 +1,80 @@
+name: Package JSON UI and name actions update
+on:
+  push:
+    branches:
+      - package-json-ui-name-actions-20261006
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check server
+        run: node --check local-server/server.js
+      - name: Syntax check admin inline script
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          html = Path("local-server/admin.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+          if not scripts:
+              raise SystemExit("inline script not found")
+          Path("/tmp/admin-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          subprocess.run(["node","--check","/tmp/admin-inline.js"], check=True)
+      - name: Verify features
+        shell: python
+        run: |
+          from pathlib import Path
+          s=Path("local-server/server.js").read_text(encoding="utf-8")
+          a=Path("local-server/admin.html").read_text(encoding="utf-8")
+          for x in [
+              "/api/roster/name-alias",
+              "/api/roster/fix-submitted-name",
+              "roster_name_aliases",
+              "student_name_corrections",
+              "insertImportedResult"
+          ]:
+              assert x in s, x
+          for x in [
+              "番号を反映",
+              "この1件を追加",
+              "同一者として扱う",
+              "名簿名に修正",
+              "mismatch-results"
+          ]:
+              assert x in a, x
+      - name: Prepare package
+        run: |
+          mkdir -p package
+          cp local-server/server.js package/server.js
+          cp local-server/admin.html package/admin.html
+          cat > package/README.txt <<'EOF'
+          pycbt 校内サーバ更新パッケージ
+
+          今回の修正
+          1. JSON取込時、出席番号を変更したあと「番号を反映」を押せるようにしました。
+             反映後は上部の一括追加ボタン、または各行の「この1件を追加」を使用できます。
+          2. 名簿不一致で、特殊漢字・旧字体など同一人物と確認できる場合、
+             「同一者として扱う」で提出記録を書き換えず照合済みにできます。
+          3. 「名簿名に修正」で提出記録の氏名だけを名簿表記へ修正できます。
+             得点・答案・試験ID・提出時刻は変更しません。
+          4. 氏名修正・同一者確認の前にDBバックアップを作成します。
+          5. 既存の未提出者一覧・不一致一覧・CSV出力を維持します。
+
+          適用先
+          C:\cbt\server.js
+          C:\cbt\admin.html
+
+          手順
+          1. 現在の server.js と admin.html をバックアップ
+          2. ZIP内の2ファイルを C:\cbt\ に上書き
+          3. cd C:\cbt
+          4. node --check server.js
+          5. Node.jsサーバを再起動
+          6. http://localhost:3000/admin を再読み込み
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pycbt-json-ui-name-actions-update
+          path: package/*
+          if-no-files-found: error
