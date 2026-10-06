@@ -1026,6 +1026,41 @@ app.get("/api/roster/status.csv", requireTeacherPC, (req, res) => {
   }
 });
 
+app.get("/api/roster/missing.csv", requireTeacherPC, (req, res) => {
+  try {
+    const scope = rosterScope(req.query);
+    const examId = String(req.query.exam || getActiveExamId());
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
+
+    const data = rosterStatus(scope, examId);
+    const missingRows = data.rows.filter(row => row.status === "未提出");
+    const header = ["試験ID", "年度", "学年", "組", "出席番号", "受験番号", "氏名"];
+    const lines = [header.map(csvCell).join(",")];
+
+    for (const row of missingRows) {
+      lines.push([
+        examId,
+        scope.year,
+        scope.grade,
+        row.student_code[1],
+        row.attendance,
+        row.student_code,
+        row.roster_name
+      ].map(csvCell).join(","));
+    }
+
+    res.set({
+      "Cache-Control": "no-store",
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition":
+        `attachment; filename="pycbt-missing-${scope.year}-grade${scope.grade}.csv"`
+    });
+    res.send("\uFEFF" + lines.join("\r\n") + "\r\n");
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 // SQLiteのオンラインバックアップ。WALを含む一貫した .db を作成してダウンロードする。
 app.get("/api/backup", requireTeacherPC, async (_req, res) => {
   try {
