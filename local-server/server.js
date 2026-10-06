@@ -86,6 +86,29 @@ db.exec(`
     setting_value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS roster_name_aliases (
+    academic_year TEXT NOT NULL,
+    grade INTEGER NOT NULL,
+    student_code TEXT NOT NULL,
+    roster_name TEXT NOT NULL,
+    submitted_name TEXT NOT NULL,
+    roster_name_key TEXT NOT NULL,
+    submitted_name_key TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (academic_year, student_code, roster_name_key, submitted_name_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_roster_name_aliases_lookup
+    ON roster_name_aliases(academic_year, grade, student_code);
+  CREATE TABLE IF NOT EXISTS student_name_corrections (
+    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exam_id TEXT NOT NULL,
+    student_code TEXT NOT NULL,
+    old_student_name TEXT NOT NULL,
+    new_student_name TEXT NOT NULL,
+    changed_records INTEGER NOT NULL,
+    corrected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    backup_file TEXT NOT NULL
+  );
 `);
 const getSetting = db.prepare(`SELECT setting_value FROM app_settings WHERE setting_key = ?`);
 const seedSetting = db.prepare(`
@@ -220,6 +243,38 @@ const updateStudentCode = db.prepare(`
 const countTargetCodeInExam = db.prepare(`
   SELECT COUNT(*) AS count FROM exam_results
   WHERE exam_id = ? AND student_code = ? AND id <> ?
+`);
+
+const rosterStudentByCode = db.prepare(`
+  SELECT student_name FROM student_roster
+  WHERE academic_year = ? AND grade = ? AND student_code = ? LIMIT 1
+`);
+const findRosterNameAlias = db.prepare(`
+  SELECT 1 FROM roster_name_aliases
+  WHERE academic_year = ? AND grade = ? AND student_code = ?
+    AND roster_name_key = ? AND submitted_name_key = ?
+  LIMIT 1
+`);
+const insertRosterNameAlias = db.prepare(`
+  INSERT OR IGNORE INTO roster_name_aliases
+    (academic_year, grade, student_code, roster_name, submitted_name,
+     roster_name_key, submitted_name_key)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+`);
+const countResultsByExactName = db.prepare(`
+  SELECT COUNT(*) AS count FROM exam_results
+  WHERE exam_id = ? AND student_code = ? AND student_name = ?
+`);
+const updateResultsNameForExam = db.prepare(`
+  UPDATE exam_results
+  SET student_name = ?
+  WHERE exam_id = ? AND student_code = ? AND student_name = ?
+`);
+const insertStudentNameCorrection = db.prepare(`
+  INSERT INTO student_name_corrections
+    (exam_id, student_code, old_student_name, new_student_name,
+     changed_records, backup_file)
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
 
 function requireTeacherPC(req, res, next) {
@@ -988,6 +1043,126 @@ app.post("/api/roster/import-file", requireTeacherPC, async (req, res) => {
   }
 });
 
+function validateRosterNameAction(body) {
+  const scope = rosterScope(body || {});
+  const examId = String(body?.examId || "").trim();
+  const studentCode = String(body?.studentCode || "").normalize("NFKC").trim();
+  const rosterName = String(body?.rosterName || "").trim();
+  const submittedName = String(body?.submittedName || "").trim();
+
+  if (!EXAM_ID_PATTERN.test(examId)) throw new Error("試験IDが不正です");
+  if (!/^[1-3][1-9]\d{2}$/.test(studentCode) ||
+      Number(studentCode[0]) !== scope.grade) {
+    throw new Error("受験番号が不正です");
+  }
+  if (!rosterName || !submittedName || rosterName.length > 60 || submittedName.length > 60) {
+    throw new Error("氏名が不正です");
+  }
+
+  const currentRoster = rosterStudentByCode.get(scope.year, scope.grade, studentCode);
+  if (!currentRoster) throw new Error("名簿に対象生徒が見つかりません");
+  if (normalizeName(currentRoster.student_name) !== normalizeName(rosterName)) {
+    throw new Error("名簿が画面表示後に変更されています。再読み込みしてください");
+  }
+
+  const recordCount = Number(
+    countResultsByExactName.get(examId, studentCode, submittedName)?.count || 0
+  );
+  if (!recordCount) {
+    throw new Error("対象の提出記録が見つかりません。再読み込みしてください");
+  }
+
+  return {
+    scope,
+    examId,
+    studentCode,
+    rosterName: currentRoster.student_name,
+    submittedName,
+    recordCount,
+    rosterKey: normalizeName(currentRoster.student_name),
+    submittedKey: normalizeName(submittedName)
+  };
+}
+
+app.post("/api/roster/name-alias", requireTeacherPC, requireAdminOrigin, async (req, res) => {
+  try {
+    const action = validateRosterNameAction(req.body);
+    if (action.rosterKey === action.submittedKey) {
+      return res.status(400).json({ success: false, message: "すでに同じ氏名として判定されています" });
+    }
+
+    const backup = await createBackup();
+    insertRosterNameAlias.run(
+      action.scope.year,
+      action.scope.grade,
+      action.studentCode,
+      action.rosterName,
+      action.submittedName,
+      action.rosterKey,
+      action.submittedKey
+    );
+
+    console.log(
+      `[NAME ALIAS] ${action.scope.year} ${action.studentCode} ${action.rosterName} ≒ ${action.submittedName}（DBバックアップ ${backup.filename}）`
+    );
+    res.json({
+      success: true,
+      studentCode: action.studentCode,
+      rosterName: action.rosterName,
+      submittedName: action.submittedName,
+      backupFile: backup.filename
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+app.post("/api/roster/fix-submitted-name", requireTeacherPC, requireAdminOrigin, async (req, res) => {
+  try {
+    const action = validateRosterNameAction(req.body);
+    if (action.rosterName === action.submittedName) {
+      return res.status(400).json({ success: false, message: "すでに名簿氏名と同じです" });
+    }
+
+    const backup = await createBackup();
+    const changeNames = db.transaction(() => {
+      const result = updateResultsNameForExam.run(
+        action.rosterName,
+        action.examId,
+        action.studentCode,
+        action.submittedName
+      );
+      const changed = Number(result.changes || 0);
+      if (!changed) throw new Error("対象の提出記録が変わりました。再読み込みしてください");
+      insertStudentNameCorrection.run(
+        action.examId,
+        action.studentCode,
+        action.submittedName,
+        action.rosterName,
+        changed,
+        backup.filename
+      );
+      return changed;
+    });
+    const changedRecords = changeNames();
+
+    console.log(
+      `[FIX NAME] ${action.examId} ${action.studentCode} ${action.submittedName} → ${action.rosterName} ${changedRecords}件（DBバックアップ ${backup.filename}）`
+    );
+    res.json({
+      success: true,
+      studentCode: action.studentCode,
+      oldName: action.submittedName,
+      newName: action.rosterName,
+      changedRecords,
+      backupFile: backup.filename
+    });
+  } catch (error) {
+    console.error("提出氏名の修正に失敗しました", error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 function rosterStatus(scope, examId) {
   const roster = rosterForGrade.all(scope.year, scope.grade);
   const records = allResults.all().map(toAdminRow).filter(row =>
@@ -1001,10 +1176,25 @@ function rosterStatus(scope, examId) {
   const rows = roster.map(person => {
     const attempts = submissions.get(person.student_code) || [];
     const latest = attempts[0] || null;
-    const nameMismatch = latest ? normalizeName(latest.student_name) !== normalizeName(person.student_name) : false;
+    const rosterKey = normalizeName(person.student_name);
+    const submittedKey = latest ? normalizeName(latest.student_name) : "";
+    const samePersonConfirmed = latest && rosterKey !== submittedKey
+      ? Boolean(findRosterNameAlias.get(
+          scope.year, scope.grade, person.student_code, rosterKey, submittedKey
+        ))
+      : false;
+    const nameMismatch = latest ? rosterKey !== submittedKey && !samePersonConfirmed : false;
+    const status = !latest
+      ? "未提出"
+      : nameMismatch
+        ? "氏名不一致"
+        : samePersonConfirmed
+          ? "同一者確認済み"
+          : "提出済み";
     return { student_code: person.student_code, roster_name: person.student_name,
       submitted_name: latest?.student_name || "", class_name: `${scope.grade}年${person.student_code[1]}組`,
-      attendance: Number(person.student_code.slice(2)), status: !latest ? "未提出" : nameMismatch ? "氏名不一致" : "提出済み",
+      attendance: Number(person.student_code.slice(2)), status,
+      same_person_confirmed: samePersonConfirmed,
       attempts: attempts.length, score: latest?.score ?? null,
       verification_status: latest?.verification_status || "",
       submitted_at: latest?.submitted_at || "" };
