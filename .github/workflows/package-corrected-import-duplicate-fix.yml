@@ -1,0 +1,67 @@
+name: Package corrected import duplicate fix
+on:
+  push:
+    branches:
+      - package-corrected-import-duplicate-fix-20261006
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check server
+        run: node --check local-server/server.js
+      - name: Syntax check admin inline script
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          html = Path("local-server/admin.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+          if not scripts:
+              raise SystemExit("inline script not found")
+          Path("/tmp/admin-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          subprocess.run(["node","--check","/tmp/admin-inline.js"], check=True)
+      - name: Verify corrected duplicate behavior
+        shell: python
+        run: |
+          from pathlib import Path
+          s=Path("local-server/server.js").read_text(encoding="utf-8")
+          a=Path("local-server/admin.html").read_text(encoding="utf-8")
+          assert "const existing = attendanceCorrected ? correctedExisting : originalExisting;" in s
+          assert "originalExistingResultId" in s
+          assert "訂正後番号" in a
+          assert "この1件を追加" in a
+      - name: Prepare package
+        run: |
+          mkdir -p package
+          cp local-server/server.js package/server.js
+          cp local-server/admin.html package/admin.html
+          cat > package/README.txt <<'EOF'
+          pycbt 校内サーバ更新パッケージ
+
+          修正内容
+          - 出席番号を訂正して「番号を反映」した場合、
+            元の誤った受験番号に同じ提出記録が残っていても、
+            訂正後の受験番号に同じ提出がなければ新規追加できるように修正。
+          - 元の成績は削除・上書きしません。
+          - 訂正後の番号に同じ提出が既にある場合だけ「重複」として追加を止めます。
+          - 「この1件を追加」と上部の「確認済みJSONを成績に追加」が利用できます。
+          - 名簿不一致の「同一者として扱う」「名簿名に修正」機能も含みます。
+
+          適用先
+          C:\cbt\server.js
+          C:\cbt\admin.html
+
+          手順
+          1. 現在の server.js と admin.html をバックアップ
+          2. ZIP内の2ファイルを C:\cbt\ に上書き
+          3. cd C:\cbt
+          4. node --check server.js
+          5. Node.jsサーバを再起動
+          6. http://localhost:3000/admin を再読み込み
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pycbt-corrected-import-duplicate-fix
+          path: package/*
+          if-no-files-found: error
