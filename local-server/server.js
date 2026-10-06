@@ -622,6 +622,40 @@ function inspectImportedResult(record, options = {}) {
   };
 }
 
+const insertImportedResult = db.transaction((inspected, backupFile) => {
+  const result = insertResult.run(
+    inspected.code,
+    inspected.name,
+    `${inspected.code[0]}年${inspected.code[1]}組`,
+    inspected.trusted.total.earned,
+    inspected.trusted.knowledge.earned,
+    inspected.trusted.thinking.earned,
+    JSON.stringify(inspected.verified.questions),
+    inspected.startedAt,
+    inspected.submittedAt,
+    inspected.examId,
+    inspected.verified.poolVersion,
+    "server_scored",
+    inspected.clientTotal,
+    inspected.mismatch ? 1 : 0
+  );
+  const resultId = Number(result.lastInsertRowid);
+
+  if (inspected.attendanceCorrected) {
+    insertStudentCodeCorrection.run(
+      resultId,
+      inspected.examId,
+      inspected.originalCode,
+      inspected.code,
+      inspected.name,
+      inspected.startedAt,
+      inspected.submittedAt,
+      backupFile
+    );
+  }
+  return resultId;
+});
+
 app.post("/api/results/import-json/preview", requireTeacherPC, requireAdminOrigin, (req, res) => {
   try {
     const inspected = inspectImportedResult(req.body?.record, {
@@ -691,37 +725,8 @@ app.post("/api/results/import-json", requireTeacherPC, requireAdminOrigin, async
       });
     }
 
-    const result = insertResult.run(
-      inspected.code,
-      inspected.name,
-      `${inspected.code[0]}年${inspected.code[1]}組`,
-      inspected.trusted.total.earned,
-      inspected.trusted.knowledge.earned,
-      inspected.trusted.thinking.earned,
-      JSON.stringify(inspected.verified.questions),
-      inspected.startedAt,
-      inspected.submittedAt,
-      inspected.examId,
-      inspected.verified.poolVersion,
-      "server_scored",
-      inspected.clientTotal,
-      inspected.mismatch ? 1 : 0
-    );
-    const resultId = Number(result.lastInsertRowid);
-
-    // 取込時に出席番号を訂正した場合は、既存の訂正履歴表へ元番号→保存番号を記録する。
-    if (inspected.attendanceCorrected) {
-      insertStudentCodeCorrection.run(
-        resultId,
-        inspected.examId,
-        inspected.originalCode,
-        inspected.code,
-        inspected.name,
-        inspected.startedAt,
-        inspected.submittedAt,
-        backup.filename
-      );
-    }
+    // 成績追加と訂正履歴追加を1トランザクションで行い、片方だけ残る状態を防ぐ。
+    const resultId = insertImportedResult(inspected, backup.filename);
 
     console.log(
       `[IMPORT JSON] ${inspected.examId} ${inspected.originalCode}${inspected.attendanceCorrected ? `→${inspected.code}` : ""} ${inspected.name} ${inspected.trusted.total.earned}点（記録ID ${resultId}／取込前バックアップ ${backup.filename}）`
