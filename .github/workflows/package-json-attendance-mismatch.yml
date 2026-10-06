@@ -1,0 +1,83 @@
+name: Package JSON attendance and roster mismatch update
+on:
+  push:
+    branches:
+      - package-json-attendance-mismatch-20261006
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check server
+        run: node --check local-server/server.js
+      - name: Syntax check admin inline script
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          html = Path("local-server/admin.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+          if not scripts:
+              raise SystemExit("inline script not found")
+          Path("/tmp/admin-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          subprocess.run(["node","--check","/tmp/admin-inline.js"], check=True)
+      - name: Verify required features
+        shell: python
+        run: |
+          from pathlib import Path
+          s=Path("local-server/server.js").read_text(encoding="utf-8")
+          a=Path("local-server/admin.html").read_text(encoding="utf-8")
+          required_server=[
+            "correctedAttendance",
+            "insertImportedResult",
+            "/api/roster/mismatches.csv",
+            "/api/roster/missing.csv"
+          ]
+          required_admin=[
+            "取込出席番号",
+            "mismatch-results",
+            "missing-results",
+            "correctedAttendance"
+          ]
+          for x in required_server:
+              assert x in s, x
+          for x in required_admin:
+              assert x in a, x
+      - name: Prepare package
+        run: |
+          mkdir -p package
+          cp local-server/server.js package/server.js
+          cp local-server/admin.html package/admin.html
+          cat > package/README.txt <<'EOF'
+          pycbt 校内サーバ更新パッケージ
+
+          追加機能
+          1. 欠課等で提出された結果JSONの取込時に、正しい出席番号へ訂正して新規保存できます。
+             - 元のJSONは変更しません。
+             - 採点は受験時に実際に出題された問題を基準に行います。
+             - 既存成績は上書き・削除しません。
+             - 訂正した場合は受験番号訂正履歴に記録します。
+             - 新規追加前にDBバックアップを作成します。
+          2. 名簿照合に「名簿不一致・名簿外提出」一覧を追加しました。
+             - 氏名不一致と名簿外提出を別状態で表示します。
+             - 専用CSV出力に対応しています。
+          3. 既存の未提出者一覧・CSV出力はそのまま維持します。
+
+          適用先
+          C:\cbt\server.js
+          C:\cbt\admin.html
+
+          適用手順
+          1. 現在の server.js と admin.html を別名でバックアップしてください。
+          2. ZIP内の server.js と admin.html を C:\cbt\ に上書きしてください。
+          3. コマンドプロンプトで次を実行してください。
+             cd C:\cbt
+             node --check server.js
+          4. Node.js サーバを再起動してください。
+          5. http://localhost:3000/admin を開いて動作を確認してください。
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pycbt-json-attendance-roster-mismatch-update
+          path: package/*
+          if-no-files-found: error
