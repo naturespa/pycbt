@@ -138,6 +138,19 @@
       <p class="note">先生PCの <code>C:\cbt\meibo.csv</code> を読みます。取り込み前に変更件数を確認してください。取り込むと、選択した年度・学年の名簿を置き換え、既存の成績は保持します。</p>
       <p id="roster-message" role="status" aria-live="polite"></p>
       <p id="roster-summary">照合結果を読み込み中…</p>
+
+      <div class="toolbar" style="margin-top: 18px;">
+        <h3 style="margin: 0;">未提出者一覧</h3>
+        <a id="missing-download" class="button" href="#" download>未提出者をCSV出力</a>
+      </div>
+      <p id="missing-summary" class="note" style="margin-top: 10px;">未提出者を確認中…</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>クラス</th><th>出席番号</th><th>受験番号</th><th>氏名</th></tr></thead>
+          <tbody id="missing-results"></tbody>
+        </table>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead><tr><th>提出状況</th><th>受験番号</th><th>クラス</th><th>出席番号</th><th>名簿氏名</th><th>入力氏名</th><th>提出回数</th><th>得点</th><th>提出時刻</th></tr></thead>
@@ -656,10 +669,41 @@
       const query = rosterQuery();
       if (!query.get("exam")) return;
       $("roster-download").href = `/api/roster/status.csv?${query}`;
+      $("missing-download").href = `/api/roster/missing.csv?${query}`;
       $("roster-summary").textContent = "照合結果を読み込み中…";
+      $("missing-summary").textContent = "未提出者を確認中…";
       try {
         const data = await apiJson(`/api/roster/status?${query}`);
         $("roster-summary").textContent = `試験 ${data.examId} ／ 名簿 ${data.registered} 人 ／ 提出 ${data.submitted} 人 ／ 未提出 ${data.missing} 人 ／ 氏名不一致 ${data.nameMismatches} 人 ／ 複数提出 ${data.duplicates} 人 ／ 名簿外の提出 ${data.unmatched.length} 人`;
+
+        const missingRows = data.rows.filter(row => row.status === "未提出");
+        $("missing-summary").textContent = missingRows.length
+          ? `未提出 ${missingRows.length} 人。現在選択している試験ID・年度・学年を基準に表示しています。`
+          : data.registered
+            ? "未提出者はいません。"
+            : "名簿が登録されていません。";
+
+        const missingBody = $("missing-results");
+        missingBody.replaceChildren();
+        for (const row of missingRows) {
+          const tr = document.createElement("tr");
+          for (const value of [row.class_name, row.attendance, row.student_code, row.roster_name]) {
+            const td = document.createElement("td");
+            td.textContent = value ?? "";
+            tr.appendChild(td);
+          }
+          missingBody.appendChild(tr);
+        }
+        if (!missingRows.length) {
+          const tr = document.createElement("tr"), td = document.createElement("td");
+          td.colSpan = 4;
+          td.textContent = data.registered
+            ? "未提出者はいません。"
+            : "この年度・学年の名簿が登録されていません。";
+          tr.appendChild(td);
+          missingBody.appendChild(tr);
+        }
+
         const tbody = $("roster-results");
         tbody.replaceChildren();
         for (const row of [...data.rows, ...data.unmatched.map(row => ({
@@ -685,6 +729,8 @@
         }
       } catch (error) {
         $("roster-summary").textContent = `照合結果を取得できませんでした：${error.message}`;
+        $("missing-summary").textContent = `未提出者一覧を取得できませんでした：${error.message}`;
+        $("missing-results").replaceChildren();
       }
     }
     function invalidatePreview() {
