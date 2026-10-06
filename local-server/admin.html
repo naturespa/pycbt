@@ -20,6 +20,7 @@
     select, input[type=number], input[type=text], input[type=file] { border: 1px solid #899cb7; background: white; min-width: 110px; }
     #active-exam-id { min-width: 260px; }
     #student-url { min-width: min(520px, 72vw); }
+    .attendance-edit { width: 78px; min-width: 78px !important; }
     button, a.button { border: 1px solid #204f8e; background: #204f8e; color: white; cursor: pointer; text-decoration: none; }
     button:hover, a.button:hover { background: #163d71; }
     button.danger { background: #a11f2a; border-color: #a11f2a; padding: 5px 10px; }
@@ -93,19 +94,19 @@
         <button id="json-preview" type="button" disabled>JSONを確認</button>
         <button id="json-import" type="button" disabled>確認済みJSONを成績に追加</button>
       </div>
-      <p class="note">学校サーバへ送信できなかった生徒の結果JSONを読み込みます。既存の成績は上書き・削除しません。同じ試験ID・受験番号・開始時刻の提出がすでにある場合は重複としてスキップします。JSON内の得点や正誤はそのまま信用せず、校内サーバの採点マスタで再採点してから追加します。新規追加の直前にはDBバックアップを作成します。</p>
+      <p class="note">学校サーバへ送信できなかった生徒の結果JSONを読み込みます。既存の成績は上書き・削除しません。出席番号を誤って受験した場合は、確認一覧の「取込出席番号」を正しい番号へ変更してから取り込めます。採点は受験時に実際に出題された問題を基準に行い、訂正は保存先の受験番号だけに反映します。同じ提出がすでにある場合は重複としてスキップし、新規追加の直前にはDBバックアップを作成します。</p>
       <p id="json-message" role="status" aria-live="polite"></p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ファイル</th><th>確認</th><th>試験ID</th><th>受験番号</th><th>氏名</th><th>JSON表示点</th><th>サーバ再採点</th><th>提出時刻</th><th>備考</th></tr></thead>
-          <tbody id="json-results"><tr><td colspan="9">JSONファイルを選択してください。</td></tr></tbody>
+          <thead><tr><th>ファイル</th><th>確認</th><th>試験ID</th><th>JSON受験番号</th><th>取込出席番号</th><th>取込受験番号</th><th>氏名</th><th>JSON表示点</th><th>サーバ再採点</th><th>提出時刻</th><th>備考</th></tr></thead>
+          <tbody id="json-results"><tr><td colspan="11">JSONファイルを選択してください。</td></tr></tbody>
         </table>
       </div>
     </section>
 
     <section class="panel corrections">
       <h2>受験番号訂正履歴</h2>
-      <p class="note">「出席番号訂正」で変更した履歴です。得点・答案・試験ID・開始時刻・提出時刻は変更しません。訂正前にはDBバックアップを作成します。</p>
+      <p class="note">成績一覧の「出席番号訂正」と、結果JSON取込時に出席番号を訂正した履歴です。得点・答案・試験ID・開始時刻・提出時刻は変更しません。訂正・取込前にはDBバックアップを作成します。</p>
       <p id="correction-message" role="status" aria-live="polite"></p>
       <div class="table-wrap">
         <table>
@@ -148,6 +149,18 @@
         <table>
           <thead><tr><th>クラス</th><th>出席番号</th><th>受験番号</th><th>氏名</th></tr></thead>
           <tbody id="missing-results"></tbody>
+        </table>
+      </div>
+
+      <div class="toolbar" style="margin-top: 18px;">
+        <h3 style="margin: 0;">名簿不一致・名簿外提出</h3>
+        <a id="mismatch-download" class="button" href="#" download>不一致一覧をCSV出力</a>
+      </div>
+      <p id="mismatch-summary" class="note" style="margin-top: 10px;">名簿との不一致を確認中…</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状態</th><th>クラス</th><th>出席番号</th><th>受験番号</th><th>名簿氏名</th><th>入力氏名</th></tr></thead>
+          <tbody id="mismatch-results"></tbody>
         </table>
       </div>
 
@@ -344,61 +357,128 @@
       $("exam-setting-message").className = "";
       $("exam-setting-message").textContent = "生徒用URLをコピーしました。";
     }
+    async function refreshJsonItemPreview(item) {
+      if (!item.record) return;
+      item.busy = true;
+      item.error = "";
+      item.importError = "";
+      renderJsonPreview();
+      try {
+        item.preview = await apiJson("/api/results/import-json/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            record: item.record,
+            correctedAttendance: item.correctedAttendance
+          })
+        });
+      } catch (error) {
+        item.preview = null;
+        item.error = error.message;
+      } finally {
+        item.busy = false;
+        renderJsonPreview();
+      }
+    }
+
     function renderJsonPreview() {
       const tbody = $("json-results");
       tbody.replaceChildren();
+
       for (const item of jsonPreviewItems) {
         const tr = document.createElement("tr");
         const preview = item.preview;
-        const status = item.error
-          ? "エラー"
-          : preview?.duplicate
-            ? "重複"
-            : item.imported
-              ? "取込済み"
-              : item.importError
-                ? "取込失敗"
-                : "追加可能";
-        const note = item.error
+        const status = item.busy
+          ? "再確認中"
+          : item.error
+            ? "エラー"
+            : preview?.duplicate
+              ? "重複"
+              : item.imported
+                ? "取込済み"
+                : item.importError
+                  ? "取込失敗"
+                  : "追加可能";
+
+        let note = item.error
           ? item.error
           : item.importError
             ? item.importError
             : preview?.duplicate
-              ? `記録ID ${preview.existingResultId} と同一提出`
+              ? `記録ID ${preview.existingResultId} と同一提出${preview.existingStudentCode ? `（保存番号 ${preview.existingStudentCode}）` : ""}`
               : preview?.activeExamMismatch
                 ? `現在の試験IDは ${preview.activeExamId}（JSONは別試験としてそのまま保存）`
                 : preview?.scoreMismatch
                   ? "JSON表示点とサーバ再採点に差あり"
                   : "サーバ再採点一致";
-        const values = [
-          item.fileName,
-          status,
-          preview?.examId ?? "",
-          preview?.studentCode ?? "",
-          preview?.studentName ?? "",
-          preview?.clientScore ?? "",
-          preview?.serverScore ?? "",
-          preview?.submittedAt ? timestamp(preview.submittedAt) : "",
-          note
-        ];
-        values.forEach((value, index) => {
+
+        if (preview?.attendanceCorrected && !preview?.duplicate) {
+          const correction = `出席番号 ${preview.originalAttendance} → ${preview.importAttendance} に訂正して保存`;
+          note = note ? `${correction} ／ ${note}` : correction;
+        }
+
+        const addTextCell = (value, className = "") => {
           const td = document.createElement("td");
           td.textContent = value ?? "";
-          if (index === 1) td.className = item.error || item.importError ? "error" :
-            preview?.duplicate ? "warn" : "ok";
+          if (className) td.className = className;
           tr.appendChild(td);
+          return td;
+        };
+
+        addTextCell(item.fileName);
+        addTextCell(status, item.busy ? "" :
+          item.error || item.importError ? "error" : preview?.duplicate ? "warn" : "ok");
+        addTextCell(preview?.examId ?? "");
+        addTextCell(preview?.originalStudentCode ?? "");
+
+        const attendanceCell = document.createElement("td");
+        const attendanceInput = document.createElement("input");
+        attendanceInput.type = "number";
+        attendanceInput.min = "1";
+        attendanceInput.max = "99";
+        attendanceInput.className = "attendance-edit";
+        attendanceInput.value = String(
+          item.correctedAttendance ??
+          preview?.importAttendance ??
+          preview?.originalAttendance ??
+          ""
+        );
+        attendanceInput.disabled = item.imported || item.busy || !item.record;
+        attendanceInput.setAttribute("aria-label", `${item.fileName} の取込出席番号`);
+        attendanceInput.addEventListener("change", async () => {
+          const value = Number(String(attendanceInput.value).normalize("NFKC").trim());
+          if (!Number.isInteger(value) || value < 1 || value > 99) {
+            item.error = "取込出席番号は1～99で入力してください";
+            renderJsonPreview();
+            return;
+          }
+          item.correctedAttendance = value;
+          await refreshJsonItemPreview(item);
         });
+        attendanceCell.appendChild(attendanceInput);
+        tr.appendChild(attendanceCell);
+
+        addTextCell(preview?.studentCode ?? "");
+        addTextCell(preview?.studentName ?? "");
+        addTextCell(preview?.clientScore ?? "");
+        addTextCell(preview?.serverScore ?? "");
+        addTextCell(preview?.submittedAt ? timestamp(preview.submittedAt) : "");
+        addTextCell(note);
+
         tbody.appendChild(tr);
       }
+
       if (!jsonPreviewItems.length) {
         const tr = document.createElement("tr"), td = document.createElement("td");
-        td.colSpan = 9;
+        td.colSpan = 11;
         td.textContent = "JSONファイルを選択してください。";
         tr.appendChild(td);
         tbody.appendChild(tr);
       }
+
       const importable = jsonPreviewItems.filter(item =>
-        item.record && item.preview && !item.preview.duplicate && !item.error && !item.imported);
+        item.record && item.preview && !item.preview.duplicate &&
+        !item.error && !item.imported && !item.busy);
       $("json-import").disabled = importable.length === 0;
     }
 
@@ -426,7 +506,7 @@
       $("json-preview").disabled = true;
       $("json-message").textContent = `${files.length}件のJSONを確認しています…`;
       for (const file of files) {
-        const item = { fileName: file.name, record: null, preview: null, error: "", imported: false, importError: "" };
+        const item = { fileName: file.name, record: null, preview: null, error: "", imported: false, importError: "", correctedAttendance: null, busy: false };
         jsonPreviewItems.push(item);
         try {
           if (file.size > 512 * 1024) throw new Error("ファイルが大きすぎます（上限512KB）");
@@ -439,6 +519,7 @@
           });
           item.record = record;
           item.preview = preview;
+          item.correctedAttendance = preview.importAttendance;
         } catch (error) {
           item.error = error.message;
         }
@@ -457,9 +538,14 @@
 
     async function importJsonFiles() {
       const targets = jsonPreviewItems.filter(item =>
-        item.record && item.preview && !item.preview.duplicate && !item.error && !item.imported);
+        item.record && item.preview && !item.preview.duplicate &&
+        !item.error && !item.imported && !item.busy);
       if (!targets.length) return;
-      if (!window.confirm(`${targets.length}件の結果JSONを成績DBへ追加します。既存成績は上書きしません。続けますか？`)) return;
+      const correctedCount = targets.filter(item => item.preview?.attendanceCorrected).length;
+      const correctionNote = correctedCount
+        ? `\n\nうち ${correctedCount}件は、画面で指定した正しい出席番号に訂正して新規保存します。元のJSONと既存成績は変更しません。`
+        : "";
+      if (!window.confirm(`${targets.length}件の結果JSONを成績DBへ追加します。既存成績は上書きしません。${correctionNote}\n\n続けますか？`)) return;
       $("json-import").disabled = true;
       $("json-preview").disabled = true;
       let imported = 0, duplicates = 0, failed = 0;
@@ -471,7 +557,10 @@
           const result = await apiJson("/api/results/import-json", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ record: item.record })
+            body: JSON.stringify({
+              record: item.record,
+              correctedAttendance: item.correctedAttendance
+            })
           });
           if (result.duplicate) {
             duplicates += 1;
@@ -670,8 +759,10 @@
       if (!query.get("exam")) return;
       $("roster-download").href = `/api/roster/status.csv?${query}`;
       $("missing-download").href = `/api/roster/missing.csv?${query}`;
+      $("mismatch-download").href = `/api/roster/mismatches.csv?${query}`;
       $("roster-summary").textContent = "照合結果を読み込み中…";
       $("missing-summary").textContent = "未提出者を確認中…";
+      $("mismatch-summary").textContent = "名簿との不一致を確認中…";
       try {
         const data = await apiJson(`/api/roster/status?${query}`);
         $("roster-summary").textContent = `試験 ${data.examId} ／ 名簿 ${data.registered} 人 ／ 提出 ${data.submitted} 人 ／ 未提出 ${data.missing} 人 ／ 氏名不一致 ${data.nameMismatches} 人 ／ 複数提出 ${data.duplicates} 人 ／ 名簿外の提出 ${data.unmatched.length} 人`;
@@ -704,6 +795,56 @@
           missingBody.appendChild(tr);
         }
 
+        const mismatchRows = [
+          ...data.rows
+            .filter(row => row.status === "氏名不一致")
+            .map(row => ({
+              status: "氏名不一致",
+              class_name: row.class_name,
+              attendance: row.attendance,
+              student_code: row.student_code,
+              roster_name: row.roster_name,
+              submitted_name: row.submitted_name
+            })),
+          ...data.unmatched.map(row => ({
+            status: "名簿外の提出",
+            class_name: row.class_name,
+            attendance: row.attendance,
+            student_code: row.student_code,
+            roster_name: "",
+            submitted_name: row.student_name
+          }))
+        ];
+        $("mismatch-summary").textContent = mismatchRows.length
+          ? `氏名不一致 ${data.nameMismatches} 人 ／ 名簿外の提出 ${data.unmatched.length} 人。`
+          : data.registered
+            ? "名簿との不一致はありません。"
+            : "名簿が登録されていません。";
+
+        const mismatchBody = $("mismatch-results");
+        mismatchBody.replaceChildren();
+        for (const row of mismatchRows) {
+          const tr = document.createElement("tr");
+          for (const value of [
+            row.status, row.class_name, row.attendance, row.student_code,
+            row.roster_name, row.submitted_name
+          ]) {
+            const td = document.createElement("td");
+            td.textContent = value ?? "";
+            tr.appendChild(td);
+          }
+          mismatchBody.appendChild(tr);
+        }
+        if (!mismatchRows.length) {
+          const tr = document.createElement("tr"), td = document.createElement("td");
+          td.colSpan = 6;
+          td.textContent = data.registered
+            ? "名簿との不一致はありません。"
+            : "この年度・学年の名簿が登録されていません。";
+          tr.appendChild(td);
+          mismatchBody.appendChild(tr);
+        }
+
         const tbody = $("roster-results");
         tbody.replaceChildren();
         for (const row of [...data.rows, ...data.unmatched.map(row => ({
@@ -730,7 +871,9 @@
       } catch (error) {
         $("roster-summary").textContent = `照合結果を取得できませんでした：${error.message}`;
         $("missing-summary").textContent = `未提出者一覧を取得できませんでした：${error.message}`;
+        $("mismatch-summary").textContent = `名簿不一致一覧を取得できませんでした：${error.message}`;
         $("missing-results").replaceChildren();
+        $("mismatch-results").replaceChildren();
       }
     }
     function invalidatePreview() {
