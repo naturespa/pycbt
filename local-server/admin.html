@@ -422,7 +422,9 @@
             ? item.importError
             : preview?.duplicate
               ? `記録ID ${preview.existingResultId} と同一提出${preview.existingStudentCode ? `（保存番号 ${preview.existingStudentCode}）` : ""}`
-              : preview?.activeExamMismatch
+              : preview?.attendanceCorrected && preview?.originalExistingResultId
+                ? `元番号 ${preview.originalExistingStudentCode} には記録ID ${preview.originalExistingResultId} が存在しますが、訂正後番号 ${preview.studentCode} へ新規追加できます`
+                : preview?.activeExamMismatch
                 ? `現在の試験IDは ${preview.activeExamId}（JSONは別試験としてそのまま保存）`
                 : preview?.scoreMismatch
                   ? "JSON表示点とサーバ再採点に差あり"
