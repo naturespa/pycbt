@@ -514,7 +514,7 @@ function importRecordError(statusCode, message) {
 
 // 生徒が結果画面から保存したJSONを、校内サーバと同じ採点マスタで再検証する。
 // JSON内の得点・正誤は信用せず、question_id と response から必ず再採点する。
-function inspectImportedResult(record) {
+function inspectImportedResult(record, options = {}) {
   if (!record || typeof record !== "object" || Array.isArray(record) || record.schema_version !== 1) {
     throw importRecordError(400, "pycbtの結果JSON（schema_version 1）を選択してください");
   }
@@ -528,14 +528,15 @@ function inspectImportedResult(record) {
 
   const examId = String(assessment.exam_id || "").trim();
   const submittedPoolVersion = String(assessment.pool_version || "").trim();
-  const code = String(student.id || "").normalize("NFKC").trim();
+  const originalCode = String(student.id || "").normalize("NFKC").trim();
   const name = String(student.name || "").trim();
   const startedAt = String(session.started_at || "").trim();
   const submittedAt = String(session.submitted_at || "").trim();
+
   if (!EXAM_ID_PATTERN.test(examId)) {
     throw importRecordError(400, "JSONの試験IDが不正です");
   }
-  if (!/^[1-3][1-9]\d{2}$/.test(code) || code.slice(2) === "00") {
+  if (!/^[1-3][1-9]\d{2}$/.test(originalCode) || originalCode.slice(2) === "00") {
     throw importRecordError(400, "JSONの受験番号が4桁の形式ではありません");
   }
   if (!name || name.length > 60) {
@@ -548,18 +549,32 @@ function inspectImportedResult(record) {
   if (Date.parse(submittedAt) < Date.parse(startedAt)) {
     throw importRecordError(400, "JSONの提出時刻が開始時刻より前になっています");
   }
-  if (student.grade != null && Number(student.grade) !== Number(code[0]) ||
-      student.class != null && Number(student.class) !== Number(code[1]) ||
-      student.attendance != null && Number(student.attendance) !== Number(code.slice(2))) {
+  if ((student.grade != null && Number(student.grade) !== Number(originalCode[0])) ||
+      (student.class != null && Number(student.class) !== Number(originalCode[1])) ||
+      (student.attendance != null && Number(student.attendance) !== Number(originalCode.slice(2)))) {
     throw importRecordError(400, "JSONの受験番号と学年・組・出席番号が一致しません");
   }
   if (record.questions.length !== 45) {
     throw importRecordError(400, "JSONの問題数が45問ではありません");
   }
 
+  let importAttendance = Number(originalCode.slice(2));
+  if (options.correctedAttendance != null && String(options.correctedAttendance).trim() !== "") {
+    const normalizedAttendance = String(options.correctedAttendance).normalize("NFKC").trim();
+    if (!/^\d{1,2}$/.test(normalizedAttendance) ||
+        Number(normalizedAttendance) < 1 || Number(normalizedAttendance) > 99) {
+      throw importRecordError(400, "訂正する出席番号は1～99で指定してください");
+    }
+    importAttendance = Number(normalizedAttendance);
+  }
+  const importCode = originalCode.slice(0, 2) + String(importAttendance).padStart(2, "0");
+  const attendanceCorrected = importCode !== originalCode;
+
+  // 出題内容は受験時の番号で決まっているため、採点はJSON内の元番号で行う。
+  // 訂正番号は保存先の受験番号にだけ使用し、答案や得点は変更しない。
   let verified;
   try {
-    verified = scoreExam(code, record.questions, submittedPoolVersion);
+    verified = scoreExam(originalCode, record.questions, submittedPoolVersion);
   } catch (error) {
     throw importRecordError(422, error.message);
   }
@@ -576,28 +591,56 @@ function inspectImportedResult(record) {
   const mismatch = clientTotal !== trusted.total.earned ||
     clientKnowledge !== trusted.knowledge.earned ||
     clientThinking !== trusted.thinking.earned;
-  const existing = findSubmissionByOriginalIdentity(examId, code, startedAt);
+
+  // 既存成績は変更しない。同じ提出が元番号または訂正後番号ですでに存在すれば重複扱い。
+  const originalExisting = findSubmissionByOriginalIdentity(examId, originalCode, startedAt);
+  const correctedExisting = attendanceCorrected
+    ? findSubmissionByOriginalIdentity(examId, importCode, startedAt)
+    : null;
+  const existing = correctedExisting || originalExisting;
+
   return {
-    examId, code, name, startedAt, submittedAt,
-    submittedPoolVersion, verified, trusted,
-    clientTotal, clientKnowledge, clientThinking,
-    mismatch, existing,
+    examId,
+    originalCode,
+    code: importCode,
+    originalAttendance: Number(originalCode.slice(2)),
+    importAttendance,
+    attendanceCorrected,
+    name,
+    startedAt,
+    submittedAt,
+    submittedPoolVersion,
+    verified,
+    trusted,
+    clientTotal,
+    clientKnowledge,
+    clientThinking,
+    mismatch,
+    existing,
+    existingStudentCode: correctedExisting ? importCode : originalExisting ? originalCode : null,
     activeExamMismatch: examId !== getActiveExamId()
   };
 }
 
 app.post("/api/results/import-json/preview", requireTeacherPC, requireAdminOrigin, (req, res) => {
   try {
-    const inspected = inspectImportedResult(req.body?.record);
+    const inspected = inspectImportedResult(req.body?.record, {
+      correctedAttendance: req.body?.correctedAttendance
+    });
     res.set("Cache-Control", "no-store");
     res.json({
       success: true,
       duplicate: Boolean(inspected.existing),
       existingResultId: inspected.existing?.id ?? null,
+      existingStudentCode: inspected.existingStudentCode,
       activeExamMismatch: inspected.activeExamMismatch,
       activeExamId: getActiveExamId(),
       examId: inspected.examId,
+      originalStudentCode: inspected.originalCode,
+      originalAttendance: inspected.originalAttendance,
       studentCode: inspected.code,
+      importAttendance: inspected.importAttendance,
+      attendanceCorrected: inspected.attendanceCorrected,
       studentName: inspected.name,
       startedAt: inspected.startedAt,
       submittedAt: inspected.submittedAt,
@@ -620,24 +663,29 @@ app.post("/api/results/import-json/preview", requireTeacherPC, requireAdminOrigi
 // 追加前に必ずDBバックアップを作り、結果JSONの提出時刻をそのまま保存する。
 app.post("/api/results/import-json", requireTeacherPC, requireAdminOrigin, async (req, res) => {
   try {
-    let inspected = inspectImportedResult(req.body?.record);
+    const options = { correctedAttendance: req.body?.correctedAttendance };
+    let inspected = inspectImportedResult(req.body?.record, options);
     if (inspected.existing) {
       return res.json({
         success: true, duplicate: true, imported: false,
         resultId: inspected.existing.id,
-        examId: inspected.examId, studentCode: inspected.code,
+        examId: inspected.examId,
+        originalStudentCode: inspected.originalCode,
+        studentCode: inspected.code,
         score: inspected.trusted.total.earned
       });
     }
 
     const backup = await createBackup();
     // バックアップ中に同じ提出が別経路から保存された可能性を再確認する。
-    inspected = inspectImportedResult(req.body?.record);
+    inspected = inspectImportedResult(req.body?.record, options);
     if (inspected.existing) {
       return res.json({
         success: true, duplicate: true, imported: false,
         resultId: inspected.existing.id,
-        examId: inspected.examId, studentCode: inspected.code,
+        examId: inspected.examId,
+        originalStudentCode: inspected.originalCode,
+        studentCode: inspected.code,
         score: inspected.trusted.total.earned,
         backupFile: backup.filename
       });
@@ -660,11 +708,31 @@ app.post("/api/results/import-json", requireTeacherPC, requireAdminOrigin, async
       inspected.mismatch ? 1 : 0
     );
     const resultId = Number(result.lastInsertRowid);
-    console.log(`[IMPORT JSON] ${inspected.examId} ${inspected.code} ${inspected.name} ${inspected.trusted.total.earned}点（記録ID ${resultId}／取込前バックアップ ${backup.filename}）`);
+
+    // 取込時に出席番号を訂正した場合は、既存の訂正履歴表へ元番号→保存番号を記録する。
+    if (inspected.attendanceCorrected) {
+      insertStudentCodeCorrection.run(
+        resultId,
+        inspected.examId,
+        inspected.originalCode,
+        inspected.code,
+        inspected.name,
+        inspected.startedAt,
+        inspected.submittedAt,
+        backup.filename
+      );
+    }
+
+    console.log(
+      `[IMPORT JSON] ${inspected.examId} ${inspected.originalCode}${inspected.attendanceCorrected ? `→${inspected.code}` : ""} ${inspected.name} ${inspected.trusted.total.earned}点（記録ID ${resultId}／取込前バックアップ ${backup.filename}）`
+    );
     res.json({
       success: true, duplicate: false, imported: true,
       resultId, backupFile: backup.filename,
-      examId: inspected.examId, studentCode: inspected.code,
+      examId: inspected.examId,
+      originalStudentCode: inspected.originalCode,
+      studentCode: inspected.code,
+      attendanceCorrected: inspected.attendanceCorrected,
       score: inspected.trusted.total.earned,
       scoreMismatch: inspected.mismatch
     });
@@ -1054,6 +1122,56 @@ app.get("/api/roster/missing.csv", requireTeacherPC, (req, res) => {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition":
         `attachment; filename="pycbt-missing-${scope.year}-grade${scope.grade}.csv"`
+    });
+    res.send("\uFEFF" + lines.join("\r\n") + "\r\n");
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+app.get("/api/roster/mismatches.csv", requireTeacherPC, (req, res) => {
+  try {
+    const scope = rosterScope(req.query);
+    const examId = String(req.query.exam || getActiveExamId());
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(examId)) throw Error("試験IDが不正です");
+
+    const data = rosterStatus(scope, examId);
+    const mismatchRows = [
+      ...data.rows
+        .filter(row => row.status === "氏名不一致")
+        .map(row => ({
+          status: "氏名不一致",
+          student_code: row.student_code,
+          class_name: row.class_name,
+          attendance: row.attendance,
+          roster_name: row.roster_name,
+          submitted_name: row.submitted_name
+        })),
+      ...data.unmatched.map(row => ({
+        status: "名簿外の提出",
+        student_code: row.student_code,
+        class_name: row.class_name,
+        attendance: row.attendance,
+        roster_name: "",
+        submitted_name: row.student_name
+      }))
+    ];
+
+    const header = ["試験ID", "年度", "学年", "状態", "クラス", "出席番号",
+      "受験番号", "名簿氏名", "入力氏名"];
+    const lines = [header.map(csvCell).join(",")];
+    for (const row of mismatchRows) {
+      lines.push([
+        examId, scope.year, scope.grade, row.status, row.class_name,
+        row.attendance, row.student_code, row.roster_name, row.submitted_name
+      ].map(csvCell).join(","));
+    }
+
+    res.set({
+      "Cache-Control": "no-store",
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition":
+        `attachment; filename="pycbt-roster-mismatches-${scope.year}-grade${scope.grade}.csv"`
     });
     res.send("\uFEFF" + lines.join("\r\n") + "\r\n");
   } catch (error) {
