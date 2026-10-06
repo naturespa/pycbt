@@ -1,0 +1,53 @@
+name: Package local server update
+on:
+  push:
+    branches:
+      - package-missing-list-20261006
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check server
+        run: node --check local-server/server.js
+      - name: Syntax check admin inline script
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess, sys
+          html = Path("local-server/admin.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+          if not scripts:
+              raise SystemExit("inline script not found")
+          Path("/tmp/admin-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          subprocess.run(["node","--check","/tmp/admin-inline.js"], check=True)
+      - name: Prepare package
+        run: |
+          mkdir -p package
+          cp local-server/server.js package/server.js
+          cp local-server/admin.html package/admin.html
+          cat > package/README.txt <<'EOF'
+          pycbt 未提出者一覧機能 更新パッケージ
+
+          収録ファイル
+          - server.js
+          - admin.html
+
+          適用先
+          C:\cbt\server.js
+          C:\cbt\admin.html
+
+          適用手順
+          1. 現在の server.js と admin.html をバックアップしてください。
+          2. この2ファイルを C:\cbt\ に上書きしてください。
+          3. コマンドプロンプトで node --check server.js を実行してください。
+          4. Node.js サーバを再起動してください。
+          5. http://localhost:3000/admin を開き、名簿照合欄の「未提出者一覧」と「未提出者をCSV出力」を確認してください。
+
+          この更新では既存の成績レコードを削除・上書きする処理は追加していません。
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pycbt-missing-list-update
+          path: package/*
+          if-no-files-found: error
