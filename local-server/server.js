@@ -647,12 +647,14 @@ function inspectImportedResult(record, options = {}) {
     clientKnowledge !== trusted.knowledge.earned ||
     clientThinking !== trusted.thinking.earned;
 
-  // 既存成績は変更しない。同じ提出が元番号または訂正後番号ですでに存在すれば重複扱い。
+  // 既存成績は変更しない。
+  // 出席番号を訂正して取り込む場合は「訂正後の受験番号」に同じ提出があるときだけ重複扱いにする。
+  // 元の誤った受験番号に既存記録があっても、それは残したまま訂正後番号へ新規追加できる。
   const originalExisting = findSubmissionByOriginalIdentity(examId, originalCode, startedAt);
   const correctedExisting = attendanceCorrected
     ? findSubmissionByOriginalIdentity(examId, importCode, startedAt)
     : null;
-  const existing = correctedExisting || originalExisting;
+  const existing = attendanceCorrected ? correctedExisting : originalExisting;
 
   return {
     examId,
@@ -672,7 +674,9 @@ function inspectImportedResult(record, options = {}) {
     clientThinking,
     mismatch,
     existing,
-    existingStudentCode: correctedExisting ? importCode : originalExisting ? originalCode : null,
+    existingStudentCode: existing ? (attendanceCorrected ? importCode : originalCode) : null,
+    originalExistingResultId: originalExisting?.id ?? null,
+    originalExistingStudentCode: originalExisting ? originalCode : null,
     activeExamMismatch: examId !== getActiveExamId()
   };
 }
@@ -722,6 +726,8 @@ app.post("/api/results/import-json/preview", requireTeacherPC, requireAdminOrigi
       duplicate: Boolean(inspected.existing),
       existingResultId: inspected.existing?.id ?? null,
       existingStudentCode: inspected.existingStudentCode,
+      originalExistingResultId: inspected.originalExistingResultId,
+      originalExistingStudentCode: inspected.originalExistingStudentCode,
       activeExamMismatch: inspected.activeExamMismatch,
       activeExamId: getActiveExamId(),
       examId: inspected.examId,
