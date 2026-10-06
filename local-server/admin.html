@@ -839,7 +839,7 @@
           body: JSON.stringify({
             year: $("roster-year").value,
             grade: $("roster-grade").value,
-            examId: activeExamId,
+            examId: $("exam-filter").value || activeExamId,
             studentCode: row.student_code,
             rosterName: row.roster_name,
             submittedName: row.submitted_name
@@ -856,7 +856,7 @@
 
     async function fixSubmittedName(row, button) {
       if (!window.confirm(
-        `試験 ${activeExamId}／受験番号 ${row.student_code} の入力氏名「${row.submitted_name}」を、名簿氏名「${row.roster_name}」へ修正します。\n\n得点・答案・試験ID・提出時刻は変更しません。続けますか？`
+        `試験 ${$("exam-filter").value || activeExamId}／受験番号 ${row.student_code} の入力氏名「${row.submitted_name}」を、名簿氏名「${row.roster_name}」へ修正します。\n\n得点・答案・試験ID・提出時刻は変更しません。続けますか？`
       )) return;
       button.disabled = true;
       $("mismatch-summary").textContent = "氏名修正前のDBバックアップを作成中…";
@@ -867,7 +867,7 @@
           body: JSON.stringify({
             year: $("roster-year").value,
             grade: $("roster-grade").value,
-            examId: activeExamId,
+            examId: $("exam-filter").value || activeExamId,
             studentCode: row.student_code,
             rosterName: row.roster_name,
             submittedName: row.submitted_name
