@@ -23,7 +23,8 @@ const db = new Database(path.join(__dirname, "pycbt.db"));
 db.pragma("journal_mode = WAL");
 db.pragma("busy_timeout = 5000");
 app.disable("x-powered-by");
-app.use(express.json({ limit: "256kb" }));
+// 提出は非圧縮JSONのみ。認証前に圧縮データを展開しない。
+app.use(express.json({ limit: "256kb", inflate: false }));
 
 // 旧 server.js と同じ表を使う。既存の成績もそのまま表示できる。
 db.exec(`

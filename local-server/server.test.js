@@ -23,7 +23,10 @@ for (const method of ["get", "post", "options"]) {
   app[method] = (route, ...handlers) => routes.set(`${method.toUpperCase()} ${route}`, handlers);
 }
 const express = () => app;
-express.json = () => (_req, _res, next) => next();
+express.json = (options) => {
+  assert.equal(options.inflate, false, "compressed request bodies must be disabled");
+  return (_req, _res, next) => next();
+};
 class Database {
   pragma(sql) { if (sql.startsWith("table_info")) return ["id", "student_code", "student_name",
     "class_name", "score", "knowledge_score", "thinking_score", "answers", "started_at",
@@ -32,6 +35,7 @@ class Database {
   backup() { return backupFails ? Promise.reject(Error("backup failed")) : Promise.resolve(); }
   transaction(fn) { return (...args) => fn(...args); }
   prepare(sql) {
+    if (sql.includes("SELECT 1 FROM roster_name_aliases")) return { get() { return undefined; } };
     if (sql.includes("SELECT setting_value FROM app_settings")) return { get(key) {
       return settings.has(key) ? { setting_value: settings.get(key) } : undefined;
     } };
